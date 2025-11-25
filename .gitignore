@@ -1,6 +1,8 @@
-.buidl-electron/
+.build-electron/
+.node_modules/
+.dist/
+dist-electron/
 node_modules/
-dist/
 .DS_Store
 .env
 .vscode/
