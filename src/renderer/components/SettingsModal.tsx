@@ -325,6 +325,19 @@ export default function SettingsModal({ isOpen, onClose, onSettingsChanged }: Se
                     variant="secondary"
                     onClick={async () => {
                       try {
+                        // Verificar si la API de Java está disponible
+                        if (!(window as any).api || !(window as any).api.java) {
+                          alert('La API de Java no está disponible. Por favor reinicie la aplicación.');
+                          console.error('API de Java no disponible');
+                          return;
+                        }
+
+                        if (typeof (window as any).api.java.detect !== 'function') {
+                          alert('La función de detección de Java no está disponible.');
+                          console.error('Función detect no disponible');
+                          return;
+                        }
+
                         const installations = await (window as any).api.java.detect();
                         if (installations && installations.length > 0) {
                           // Mostrar instalaciones encontradas en un menú desplegable o selector
