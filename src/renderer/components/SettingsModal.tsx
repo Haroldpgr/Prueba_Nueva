@@ -363,6 +363,13 @@ export default function SettingsModal({ isOpen, onClose, onSettingsChanged }: Se
                     variant="secondary"
                     onClick={async () => {
                       try {
+                        // Verificar si la API de Java está disponible
+                        if (!(window as any).api || !(window as any).api.java || typeof (window as any).api.java.explore !== 'function') {
+                          alert('La función de exploración de Java no está disponible. Por favor reinicie la aplicación.');
+                          console.error('API de exploración de Java no disponible');
+                          return;
+                        }
+
                         const javaPathResult = await (window as any).api.java.explore();
                         if (javaPathResult) {
                           setJavaPath(javaPathResult);
