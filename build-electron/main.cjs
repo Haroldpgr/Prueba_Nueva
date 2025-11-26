@@ -3950,50 +3950,58 @@ import_electron2.ipcMain.on("download:start", (event, { url, filename, itemId })
   });
 });
 var MODRINTH_API_URL = "https://api.modrinth.com/v2";
-var modrinthProjectTypes = {
-  modpacks: "modpack",
-  mods: "mod",
-  resourcepacks: "resourcepack",
-  datapacks: "datapack",
-  shaders: "shader"
-};
-var modrinthLoaders = {
-  modpacks: ["forge", "fabric", "quilt", "neoforge"],
-  mods: ["forge", "fabric", "quilt", "neoforge"],
-  resourcepacks: [],
-  datapacks: [],
-  shaders: ["iris", "optifine"]
-};
 async function fetchModrinthContent(contentType, search) {
-  const projectType = modrinthProjectTypes[contentType];
-  if (!projectType) {
+  let facets;
+  if (contentType === "modpacks") {
+    facets = [["project_type:modpack"]];
+  } else if (contentType === "mods") {
+    facets = [["project_type:mod"]];
+  } else if (contentType === "resourcepacks") {
+    facets = [["project_type:resourcepack"]];
+  } else if (contentType === "datapacks") {
+    facets = [["project_type:datapack"]];
+  } else if (contentType === "shaders") {
+    facets = [["project_type:shader"]];
+  } else {
     console.error("Tipo de contenido no v\xE1lido para Modrinth:", contentType);
     return [];
   }
   try {
     const searchParams = new URLSearchParams({
       query: search || "",
-      facets: JSON.stringify([
-        ["project_type:" + projectType],
-        ...modrinthLoaders[contentType].length > 0 ? [["categories:" + modrinthLoaders[contentType].join(" OR ")]] : []
-      ]),
-      limit: "20",
-      index: "relevance"
+      // Puede ser vacío para obtener resultados generales
+      facets: JSON.stringify(facets),
+      limit: "100",
+      // Aumentar a 100 resultados por página
+      index: search ? "relevance" : "downloads"
+      // Ordenar por descargas si no hay búsqueda específica
     });
     const url = `${MODRINTH_API_URL}/search?${searchParams}`;
     console.log("Buscando en Modrinth:", url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15e3);
     const response = await (0, import_node_fetch.default)(url, {
+      method: "GET",
       headers: {
         "User-Agent": "DRKLauncher/1.0 (haroldpgr@gmail.com)",
-        "Accept": "application/json"
-      }
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive"
+      },
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     if (!response.ok) {
       const errorBody = await response.text();
       console.error(`Error al buscar en Modrinth: ${response.status} ${response.statusText}`, errorBody);
       throw new Error(`Error de la API de Modrinth: ${response.statusText}`);
     }
     const json = await response.json();
+    console.log("Respuesta de Modrinth:", json);
+    if (!json || !json.hits || !Array.isArray(json.hits)) {
+      console.warn("La respuesta de Modrinth no contiene resultados v\xE1lidos:", json);
+      return [];
+    }
     return json.hits.map((item) => ({
       id: item.project_id || item.id,
       title: item.title,
@@ -4005,10 +4013,14 @@ async function fetchModrinthContent(contentType, search) {
       categories: item.categories || [],
       imageUrl: item.icon_url || "https://via.placeholder.com/400x200",
       type: contentType,
-      version: item.latest_version || "N/A",
-      downloadUrl: item.versions && item.versions.length > 0 ? `https://modrinth.com/${projectType}/${item.slug}/version/${item.versions[0]}` : null
+      version: item.versions && item.versions.length > 0 ? item.versions[0] : "N/A",
+      downloadUrl: item.project_id && item.versions && item.versions.length > 0 ? `${MODRINTH_API_URL}/project/${item.project_id}/version/${item.versions[0]}` : null
     }));
   } catch (error) {
+    if (error.name === "AbortError") {
+      console.error("La solicitud a Modrinth ha expirado:", error);
+      throw new Error("La solicitud a Modrinth ha tardado demasiado en responder");
+    }
     console.error("Fallo al obtener datos de Modrinth:", error);
     return [];
   }

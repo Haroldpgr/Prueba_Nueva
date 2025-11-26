@@ -23,7 +23,7 @@ interface ContentItem {
 const ContentPage: React.FC = () => {
   const { type = 'modpacks', id } = useParams<{ type?: ContentType; id?: string }>();
   const navigate = useNavigate();
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVersion, setSelectedVersion] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -33,6 +33,8 @@ const ContentPage: React.FC = () => {
   const [isDownloading, setIsDownloading] = useState<{[key: string]: boolean}>({});
   const [downloadProgress, setDownloadProgress] = useState<{[key: string]: number}>({});
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20; // Mostrar 20 elementos por página
 
   // Cargar contenido desde Modrinth
   useEffect(() => {
@@ -46,10 +48,15 @@ const ContentPage: React.FC = () => {
         });
         console.log('Resultados de Modrinth:', results);
         setContent(results);
+        setCurrentPage(1); // Resetear a la primera página cuando se busca algo nuevo
       } catch (error) {
         console.error('Error al obtener datos de Modrinth:', error);
         // Mostrar mensaje de error al usuario
-        alert('No se pudieron cargar los datos de Modrinth. Por favor, verifica tu conexión e inténtalo de nuevo.');
+        if (error.message && error.message.includes('tiempo')) {
+          alert('La solicitud a Modrinth ha tardado demasiado. Por favor, verifica tu conexión e inténtalo de nuevo.');
+        } else {
+          alert('No se pudieron cargar los datos de Modrinth. Por favor, verifica tu conexión e inténtalo de nuevo.');
+        }
         setContent([]);
       } finally {
         setIsLoading(false);
@@ -66,21 +73,21 @@ const ContentPage: React.FC = () => {
   // Filter and sort content
   const filteredContent = React.useMemo(() => {
     let result = [...content];
-    
+
     // Apply version filter
     if (selectedVersion !== 'all') {
-      result = result.filter(item => 
+      result = result.filter(item =>
         item.minecraftVersions.includes(selectedVersion)
       );
     }
-    
+
     // Apply category filter
     if (selectedCategory !== 'all') {
-      result = result.filter(item => 
+      result = result.filter(item =>
         item.categories.includes(selectedCategory)
       );
     }
-    
+
     // Apply sorting
     result.sort((a, b) => {
       switch (sortBy) {
@@ -97,6 +104,35 @@ const ContentPage: React.FC = () => {
 
     return result;
   }, [content, selectedVersion, selectedCategory, sortBy]);
+
+  // Get paginated content
+  const paginatedContent = React.useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredContent.slice(startIndex, endIndex);
+  }, [filteredContent, currentPage, itemsPerPage]);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredContent.length / itemsPerPage);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll to top when changing pages
+    }
+  };
+
+  const nextPage = () => {
+    if (currentPage < totalPages) {
+      goToPage(currentPage + 1);
+    }
+  };
+
+  const prevPage = () => {
+    if (currentPage > 1) {
+      goToPage(currentPage - 1);
+    }
+  };
 
   // Set selected content when ID changes
   useEffect(() => {
@@ -241,6 +277,7 @@ const ContentPage: React.FC = () => {
 
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left Sidebar - Filters */}
+        {!selectedContent && (
         <div className="lg:w-72 flex-shrink-0">
           <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-5 border border-gray-700/50 shadow-lg">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center">
@@ -313,6 +350,7 @@ const ContentPage: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
 
         {/* Main Content */}
         <div className="flex-1">
@@ -331,10 +369,15 @@ const ContentPage: React.FC = () => {
             
             <div className="md:flex gap-6">
               <div className="md:w-1/3">
-                <img 
-                  src={selectedContent.imageUrl} 
+                <img
+                  src={selectedContent.imageUrl}
                   alt={selectedContent.title}
                   className="w-full rounded-lg shadow-lg mb-4"
+                  loading="lazy"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.src = 'https://via.placeholder.com/600x300/1f2937/9ca3af?text=Sin+imagen';
+                  }}
                 />
                 <div className="bg-gray-700/50 p-4 rounded-lg">
                   <h2 className="text-xl font-bold text-white mb-2">{selectedContent.title}</h2>
@@ -425,41 +468,148 @@ const ContentPage: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredContent.map((item) => (
-                  <div 
-                    key={item.id}
-                    onClick={() => handleContentClick(item)}
-                    className="bg-gray-700/50 rounded-xl overflow-hidden hover:bg-gray-700/70 transition-colors cursor-pointer group"
-                  >
-                    <div className="relative h-40 overflow-hidden">
-                      <img 
-                        src={item.imageUrl} 
-                        alt={item.title}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                      <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                        {item.type}
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-medium text-white mb-1">{item.title}</h3>
-                      <p className="text-sm text-gray-400 line-clamp-2 mb-2">{item.description}</p>
-                      <div className="flex flex-wrap gap-1">
-                        {item.minecraftVersions.slice(0, 2).map((version, index) => (
-                          <span key={`${version}-${index}-${item.id}`} className="bg-gray-600/50 text-gray-300 text-xs px-2 py-0.5 rounded">
-                            {version}
-                          </span>
-                        ))}
-                        {item.minecraftVersions.length > 2 && (
-                          <span key={`more-${item.id}`} className="bg-gray-600/50 text-gray-300 text-xs px-2 py-0.5 rounded">
-                            +{item.minecraftVersions.length - 2}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+              <div className="w-full">
+                {/* Controles de paginación */}
+                <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-2">
+                  <div className="text-sm text-gray-400">
+                    Mostrando {(currentPage - 1) * itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, filteredContent.length)} de {filteredContent.length} resultados
                   </div>
-                ))}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={prevPage}
+                      disabled={currentPage === 1}
+                      className={`px-3 py-1.5 rounded-lg ${currentPage === 1 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                    >
+                      Anterior
+                    </button>
+
+                    {/* Mostrar números de página con puntos suspensivos si hay muchas páginas */}
+                    <div className="flex gap-1">
+                      {totalPages <= 7 ? (
+                        // Si hay 7 páginas o menos, mostrar todas
+                        Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                          <button
+                            key={page}
+                            onClick={() => goToPage(page)}
+                            className={`w-10 h-10 rounded-full ${currentPage === page ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                          >
+                            {page}
+                          </button>
+                        ))
+                      ) : (
+                        // Si hay más de 7 páginas, mostrar patrón con puntos suspensivos
+                        (() => {
+                          const pages = [];
+                          const startPage = Math.max(1, currentPage - 2);
+                          const endPage = Math.min(totalPages, currentPage + 2);
+
+                          if (startPage > 1) {
+                            pages.push(1);
+                            if (startPage > 2) pages.push(-1); // Representa "..."
+                          }
+
+                          for (let i = startPage; i <= endPage; i++) {
+                            pages.push(i);
+                          }
+
+                          if (endPage < totalPages) {
+                            if (endPage < totalPages - 1) pages.push(-1); // Representa "..."
+                            pages.push(totalPages);
+                          }
+
+                          return pages.map((page, index) => (
+                            page === -1 ? (
+                              <span key={`dots-${index}`} className="w-10 h-10 flex items-center justify-center text-white">...</span>
+                            ) : (
+                              <button
+                                key={page}
+                                onClick={() => goToPage(page)}
+                                className={`w-10 h-10 rounded-full ${currentPage === page ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                              >
+                                {page}
+                              </button>
+                            )
+                          ));
+                        })()
+                      )}
+                    </div>
+
+                    <button
+                      onClick={nextPage}
+                      disabled={currentPage === totalPages}
+                      className={`px-3 py-1.5 rounded-lg ${currentPage === totalPages ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+
+                {/* Contenido paginado */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {paginatedContent.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => handleContentClick(item)}
+                      className="bg-gray-700/50 rounded-xl overflow-hidden hover:bg-gray-700/70 transition-colors cursor-pointer group"
+                    >
+                      <div className="relative h-40 overflow-hidden">
+                        <img
+                          src={item.imageUrl}
+                          alt={item.title}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          loading="lazy"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src = 'https://via.placeholder.com/600x300/1f2937/9ca3af?text=Sin+imagen';
+                          }}
+                        />
+                        <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                          {item.type}
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <h3 className="font-medium text-white mb-1">{item.title}</h3>
+                        <p className="text-sm text-gray-400 line-clamp-2 mb-2">{item.description}</p>
+                        <div className="flex flex-wrap gap-1">
+                          {item.minecraftVersions.slice(0, 2).map((version, index) => (
+                            <span key={`${version}-${index}-${item.id}`} className="bg-gray-600/50 text-gray-300 text-xs px-2 py-0.5 rounded">
+                              {version}
+                            </span>
+                          ))}
+                          {item.minecraftVersions.length > 2 && (
+                            <span key={`more-${item.id}`} className="bg-gray-600/50 text-gray-300 text-xs px-2 py-0.5 rounded">
+                              +{item.minecraftVersions.length - 2}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Controles de paginación inferiores */}
+                <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-2">
+                  <div className="text-sm text-gray-400">
+                    Mostrando {(currentPage - 1) * itemsPerPage + 1}-{Math.min(currentPage * itemsPerPage, filteredContent.length)} de {filteredContent.length} resultados
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={prevPage}
+                      disabled={currentPage === 1}
+                      className={`px-3 py-1.5 rounded-lg ${currentPage === 1 ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                    >
+                      Anterior
+                    </button>
+
+                    <button
+                      onClick={nextPage}
+                      disabled={currentPage === totalPages}
+                      className={`px-3 py-1.5 rounded-lg ${currentPage === totalPages ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

@@ -439,36 +439,52 @@ const modrinthLoaders = {
 };
 
 async function fetchModrinthContent(contentType: keyof typeof modrinthProjectTypes, search: string) {
-  const projectType = modrinthProjectTypes[contentType];
-  
-  if (!projectType) {
+  let facets: string[][];
+
+  // Estructura correcta de facetas para la API de Modrinth
+  if (contentType === 'modpacks') {
+    facets = [["project_type:modpack"]];
+  } else if (contentType === 'mods') {
+    facets = [["project_type:mod"]];
+  } else if (contentType === 'resourcepacks') {
+    facets = [["project_type:resourcepack"]];
+  } else if (contentType === 'datapacks') {
+    facets = [["project_type:datapack"]];
+  } else if (contentType === 'shaders') {
+    facets = [["project_type:shader"]];
+  } else {
     console.error('Tipo de contenido no válido para Modrinth:', contentType);
     return [];
   }
 
   try {
-    // Construir la URL de búsqueda
+    // Si no hay término de búsqueda, obtener contenido popular por tipo
     const searchParams = new URLSearchParams({
-      query: search || '',
-      facets: JSON.stringify([
-        ["project_type:" + projectType],
-        ...(modrinthLoaders[contentType].length > 0 
-          ? [["categories:" + modrinthLoaders[contentType].join(" OR ")]] 
-          : [])
-      ]),
-      limit: '20',
-      index: 'relevance'
+      query: search || '', // Puede ser vacío para obtener resultados generales
+      facets: JSON.stringify(facets),
+      limit: '100', // Aumentar a 100 resultados por página
+      index: search ? 'relevance' : 'downloads' // Ordenar por descargas si no hay búsqueda específica
     });
 
     const url = `${MODRINTH_API_URL}/search?${searchParams}`;
     console.log('Buscando en Modrinth:', url);
 
+    // Aumentar el timeout de la solicitud
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 segundos de timeout
+
     const response = await fetch(url, {
+      method: 'GET',
       headers: {
         'User-Agent': 'DRKLauncher/1.0 (haroldpgr@gmail.com)',
-        'Accept': 'application/json'
-      }
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive'
+      },
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -477,7 +493,14 @@ async function fetchModrinthContent(contentType: keyof typeof modrinthProjectTyp
     }
 
     const json = await response.json();
-    
+    console.log('Respuesta de Modrinth:', json); // Debug log
+
+    // Verificar si hay resultados válidos
+    if (!json || !json.hits || !Array.isArray(json.hits)) {
+      console.warn('La respuesta de Modrinth no contiene resultados válidos:', json);
+      return [];
+    }
+
     // Mapear la respuesta de Modrinth a nuestro formato
     return json.hits.map((item: any) => ({
       id: item.project_id || item.id,
@@ -490,12 +513,16 @@ async function fetchModrinthContent(contentType: keyof typeof modrinthProjectTyp
       categories: item.categories || [],
       imageUrl: item.icon_url || 'https://via.placeholder.com/400x200',
       type: contentType,
-      version: item.latest_version || 'N/A',
-      downloadUrl: item.versions && item.versions.length > 0 
-        ? `https://modrinth.com/${projectType}/${item.slug}/version/${item.versions[0]}`
+      version: item.versions && item.versions.length > 0 ? item.versions[0] : 'N/A',
+      downloadUrl: item.project_id && item.versions && item.versions.length > 0
+        ? `${MODRINTH_API_URL}/project/${item.project_id}/version/${item.versions[0]}`
         : null
     }));
   } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error('La solicitud a Modrinth ha expirado:', error);
+      throw new Error('La solicitud a Modrinth ha tardado demasiado en responder');
+    }
     console.error('Fallo al obtener datos de Modrinth:', error);
     return []; // Devolver un array vacío en caso de error
   }
