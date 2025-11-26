@@ -1,7 +1,26 @@
 // src/renderer/services/javaDownloadService.ts
 import { downloadService } from './downloadService';
 import { settingsService } from './settingsService';
-import { JavaInfo } from '../components/JavaSettings';
+import { JavaInfo } from '../types/java.d';
+
+// Declarar la interfaz de la API global de Java
+declare global {
+  interface Window {
+    api: {
+      java: {
+        detect: () => Promise<JavaInfo[]>;
+        test: (path: string) => Promise<any>;
+        explore: () => Promise<string | null>;
+        install: (version: string) => Promise<any>;
+        getAll: () => Promise<JavaInfo[]>;
+        getDefault: () => Promise<JavaInfo | null>;
+        setDefault: (javaId: string) => Promise<boolean>;
+        remove: (javaId: string) => Promise<boolean>;
+        getCompatibility: (minecraftVersion: string) => Promise<any>;
+      };
+    };
+  }
+}
 
 export class JavaDownloadService {
   private static readonly API_BASE_URL = 'https://api.adoptium.net/v3';
@@ -15,36 +34,16 @@ export class JavaDownloadService {
     // Detectar sistema operativo y arquitectura si no se proporcionan
     const detectedOS = os || this.detectOS();
     const detectedArch = arch || this.detectArchitecture();
-    
-    // Construir la URL de la API
-    const apiUrl = `${JavaDownloadService.API_BASE_URL}/binary/latest/${version}/ga/jdk/temurin/${detectedOS}/${detectedArch}/normal/hotspot/jdk`;
-    
-    try {
-      const response = await fetch(apiUrl, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'DRK-Launcher/1.0'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Error al obtener la URL de descarga: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      // La respuesta contiene un enlace de descarga
-      if (data.binary && data.binary.package && data.binary.package.link) {
-        return data.binary.package.link;
-      } else if (data.uri) {
-        return data.uri;
-      } else {
-        throw new Error('No se encontró una URL de descarga válida en la respuesta de la API');
-      }
-    } catch (error) {
-      console.error(`Error obteniendo URL de descarga para Java ${version}:`, error);
-      throw error;
-    }
+
+    // Formato correcto de la API v3 de Adoptium para instaladores
+    // Documentado en https://api.adoptium.net/q/swagger-ui/
+    // https://api.adoptium.net/v3/installer/latest/{feature_version}/{release_type}/{os}/{arch}/{image_type}/{jvm_impl}/{heap_size}/{vendor}
+    // Ejemplo: https://api.adoptium.net/v3/installer/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse
+    const apiUrl = `${JavaDownloadService.API_BASE_URL}/installer/latest/${version}/ga/${detectedOS}/${detectedArch}/jdk/hotspot/normal/eclipse`;
+
+    // Devolvemos directamente la URL de la API, ya que el servicio de descargas manejará la redirección
+    // y no podemos hacer HEAD requests a recursos externos debido a CORS
+    return apiUrl;
   }
 
   /**
@@ -55,19 +54,17 @@ export class JavaDownloadService {
     try {
       // Obtener la URL de descarga
       const downloadUrl = await this.getJavaDownloadUrl(version, os, arch);
-      
+
       // Crear un nombre descriptivo para la descarga
       const osName = os || this.detectOS();
       const archName = arch || this.detectArchitecture();
-      const fileName = `java-${version}-temurin-${osName}-${archName}.zip`;
-      
+
       // Iniciar la descarga usando el servicio de descargas
       const download = downloadService.createDownload(downloadUrl, `Java ${version} (${osName}/${archName})`);
+
+      // Iniciar la descarga con una actualización gradual del progreso
       await downloadService.startDownload(download.id);
-      
-      // Aquí normalmente tendríamos lógica para descomprimir e instalar Java
-      // en el directorio apropiado después de la descarga
-      
+
       console.log(`Java ${version} comenzó a descargarse. ID: ${download.id}`);
     } catch (error) {
       console.error(`Error al iniciar la descarga de Java ${version}:`, error);

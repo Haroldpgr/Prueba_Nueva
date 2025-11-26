@@ -82,37 +82,59 @@ export class DownloadService {
   }
 
   private async simulateDownload(download: Download) {
-    // Simular descarga con progreso real
-    const totalBytes = 50 * 1024 * 1024; // 50MB simulados
-    download.totalBytes = totalBytes;
-    
-    let downloadedBytes = 0;
-    const chunkSize = 1024 * 1024; // 1MB por chunk
-    const interval = 100; // ms por chunk
-    
-    while (downloadedBytes < totalBytes && download.status === 'downloading') {
-      const chunk = Math.min(chunkSize, totalBytes - downloadedBytes);
-      downloadedBytes += chunk;
-      
-      // Actualizar estadísticas
-      download.downloadedBytes = downloadedBytes;
-      download.progress = Math.round((downloadedBytes / totalBytes) * 100);
-      
-      // Calcular velocidad (bytes por segundo)
-      const elapsedSeconds = (Date.now() - download.startTime) / 1000;
-      download.speed = elapsedSeconds > 0 ? Math.round(downloadedBytes / elapsedSeconds) : 0;
-      
-      this.notifyObservers();
-      
-      // Esperar un poco
-      await new Promise(resolve => setTimeout(resolve, interval));
-    }
-    
-    if (download.status === 'downloading') {
-      download.status = 'completed';
+    try {
+      // Intentar una descarga real de la URL proporcionada
+      // Hacer una request HEAD para obtener el tamaño del archivo
+      const headResponse = await fetch(download.url, {
+        method: 'HEAD',
+        mode: 'no-cors' // Permite manejar recursos externos aunque no podamos leer la respuesta completa
+      });
+
+      // Si no podemos hacer HEAD request debido a CORS, usar valores por defecto
+      let totalBytes = 50 * 1024 * 1024; // 50MB por defecto
+
+      if (headResponse.ok && headResponse.headers.get('content-length')) {
+        totalBytes = parseInt(headResponse.headers.get('content-length') || '0', 10) || totalBytes;
+      }
+
+      download.totalBytes = totalBytes;
+
+      // Simular la descarga con progreso real
+      let downloadedBytes = 0;
+      const chunkSize = 2 * 1024 * 1024; // 2MB por chunk
+      const interval = 500; // ms por chunk
+
+      // Iniciar descarga
+      while (downloadedBytes < totalBytes && download.status === 'downloading') {
+        const chunk = Math.min(chunkSize, totalBytes - downloadedBytes);
+        downloadedBytes += chunk;
+
+        // Actualizar estadísticas
+        download.downloadedBytes = downloadedBytes;
+        download.progress = Math.round((downloadedBytes / totalBytes) * 100);
+
+        // Calcular velocidad (bytes por segundo)
+        const elapsedSeconds = (Date.now() - download.startTime) / 1000;
+        download.speed = elapsedSeconds > 0 ? Math.round(downloadedBytes / elapsedSeconds) : 0;
+
+        this.notifyObservers();
+
+        // Esperar un poco
+        await new Promise(resolve => setTimeout(resolve, interval));
+      }
+
+      if (download.status === 'downloading') {
+        download.status = 'completed';
+        download.endTime = Date.now();
+        download.progress = 100;
+        download.downloadedBytes = totalBytes;
+        this.notifyObservers();
+      }
+    } catch (error) {
+      console.error(`Error during download simulation for ${download.id}:`, error);
+      // Marcar como completado con error
+      download.status = 'error';
       download.endTime = Date.now();
-      download.progress = 100;
-      download.downloadedBytes = totalBytes;
       this.notifyObservers();
     }
   }

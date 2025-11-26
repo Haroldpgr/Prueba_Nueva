@@ -12,20 +12,23 @@
     "start": "npm run build && electron ."
   },
   "dependencies": {
-    "electron": "^31.0.0",
+    "@types/node-fetch": "^2.6.13",
+    "node-fetch": "^2.7.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.3",
+    "tar": "^6.2.1",
     "tree-kill": "^1.2.2",
-    "unzip-stream": "^0.3.4",
-    "tar": "^6.2.1"
+    "unzip-stream": "^0.3.4"
   },
   "devDependencies": {
-    "@types/node": "^20.11.30",
+    "@types/node": "^20.19.25",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.17",
+    "concurrently": "^9.2.1",
+    "electron": "^39.2.4",
     "electron-builder": "^24.13.3",
     "esbuild": "^0.21.5",
     "postcss": "^8.4.31",
@@ -33,7 +36,8 @@
     "typescript": "^5.4.5",
     "vite": "^5.0.0",
     "vite-plugin-electron": "^0.15.5",
-    "vite-plugin-electron-renderer": "^0.14.0"
+    "vite-plugin-electron-renderer": "^0.14.0",
+    "wait-on": "^9.0.3"
   },
   "optionalDependencies": {
     "better-sqlite3": "^9.4.0"

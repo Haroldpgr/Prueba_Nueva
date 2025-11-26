@@ -1,46 +1,29 @@
-// types/java.d.ts
+// src/renderer/types/java.d.ts
 
-interface JavaInfo {
+export interface JavaInfo {
   id: string;
   path: string;
   version: string;
   isWorking: boolean;
-  source: 'global' | 'installed' | 'JAVA_HOME' | 'PATH';
+  source: 'global' | 'installed' | 'JAVA_HOME' | 'PATH' | 'registry';
   downloadDate?: string;
-  isDefault?: boolean;
 }
 
-interface JavaInstallResult {
+export interface JavaInstallResult {
   success: boolean;
   javaInfo?: JavaInfo;
   message?: string;
 }
 
-interface JavaTestResult {
+export interface JavaTestResult {
   isWorking: boolean;
   version?: string;
   output?: string;
   error?: string;
 }
 
-interface JavaCompatibility {
+export interface JavaCompatibility {
   requiredVersion: string;
   recommendedVersion: string;
   note: string;
-}
-
-interface Window {
-  api: {
-    java: {
-      detect: () => Promise<JavaInfo[]>;
-      explore: () => Promise<string | null>;
-      test: (path: string) => Promise<JavaTestResult>;
-      install: (version: string) => Promise<JavaInstallResult>;
-      getAll: () => Promise<JavaInfo[]>;
-      getDefault: () => Promise<JavaInfo | null>;
-      setDefault: (javaId: string) => Promise<boolean>;
-      remove: (javaId: string) => Promise<boolean>;
-      getCompatibility: (minecraftVersion: string) => Promise<JavaCompatibility | null>;
-    };
-  };
 }

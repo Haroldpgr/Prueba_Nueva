@@ -32,10 +32,12 @@ export default function Home({ onAddAccount, onDeleteAccount, onSelectAccount, o
   }, [])
 
   useEffect(() => {
-    window.api.instances.list().then((l: any) => setInstances(l));
+    if (window.api?.instances?.list) {
+      window.api.instances.list().then((l: any) => setInstances(l));
+    }
     // Asumiendo que window.api tiene una función para obtener el nombre de usuario
     // Si no existe, se mantendrá 'Usuario' por defecto
-    if (window.api && window.api.getUser) {
+    if (window.api?.getUser) {
       window.api.getUser().then((user: { username: string }) => {
         if (user && user.username) {
           setUsername(user.username);

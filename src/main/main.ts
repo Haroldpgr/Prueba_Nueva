@@ -5,23 +5,41 @@ import os from 'node:os'
 import { initDB, hasDB, sqlite } from '../services/db'
 import { queryStatus } from '../services/serverService'
 import { launchJava } from '../services/gameService'
+import { javaDetector } from './javaDetector'
 // Import our Java service
-import javaService from './javaService'
+import javaService from './javaService';
+import fetch from 'node-fetch'; // Añadido para peticiones a la API
 
-let win: BrowserWindow | null = null
+let win: BrowserWindow | null = null;
+
+app.whenReady().then(async () => {
+  const { instancesBaseDefault } = basePaths();
+  ensureDir(instancesBaseDefault);
+  initDB();
+
+  // Detect Java using the service at startup
+  try {
+    await javaService.detectJava();
+    console.log(`Java service initialized. Found ${javaService.getAllJavas().length} Java installations.`);
+  } catch (error) {
+    console.error('Error initializing Java service:', error);
+  }
+
+  await createWindow();
+});
 
 function getUserDataPath() {
-  return app.getPath('userData')
+  return app.getPath('userData');
 }
 
 function ensureDir(dir: string) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 async function createWindow() {
   win = new BrowserWindow({
-    width: 900,
-    height: 1000,
+    width: 1200,
+    height: 800,
     title: 'DRK Launcher',
     backgroundColor: '#0f0f10',
     webPreferences: {
@@ -30,14 +48,14 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: false
     }
-  })
+  });
 
-  const url = process.env.VITE_DEV_SERVER_URL
+  const url = process.env.VITE_DEV_SERVER_URL;
   if (url) {
-    await win.loadURL(url)
-    win.webContents.openDevTools({ mode: 'detach' })
+    await win.loadURL(url);
+    win.webContents.openDevTools({ mode: 'detach' });
   } else {
-    await win.loadFile(path.join(process.cwd(), 'dist', 'index.html'))
+    await win.loadFile(path.join(process.cwd(), 'dist', 'index.html'));
   }
 }
 
@@ -216,12 +234,6 @@ function saveCrashes(list: CrashRecord[]) {
   writeJSON(crashesFile(), list)
 }
 
-app.whenReady().then(async () => {
-  const { instancesBaseDefault } = basePaths()
-  ensureDir(instancesBaseDefault)
-  initDB()
-  await createWindow()
-})
 
 ipcMain.handle('settings:get', async () => settings())
 ipcMain.handle('settings:set', async (_e, s: Settings) => { saveSettings(s); return s })
@@ -285,83 +297,6 @@ ipcMain.handle('servers:save', async (_e, list: ServerInfo[]) => {
 
 ipcMain.handle('servers:ping', async (_e, ip: string) => queryStatus(ip))
 
-async function findJavaInstallations() {
-  const installations: { version: string; path: string }[] = [];
-
-  // Para Windows, buscar en ubicaciones comunes de Java
-  if (process.platform === 'win32') {
-    const commonPaths = [
-      'C:/Program Files/Java/',
-      'C:/Program Files/Eclipse Adoptium/',
-      'C:/Program Files/Amazon Corretto/',
-      'C:/Program Files/Oracle/',
-      'C:/Program Files/OpenJDK/',
-      'C:/Program Files (x86)/Java/',
-      'C:/Program Files (x86)/Eclipse Adoptium/',
-      'C:/Program Files (x86)/Amazon Corretto/',
-      'C:/Program Files (x86)/Oracle/',
-      'C:/Program Files (x86)/OpenJDK/',
-    ];
-
-    for (const path of commonPaths) {
-      if (fs.existsSync(path)) {
-        const subdirs = fs.readdirSync(path).filter(item => item.toLowerCase().includes('java') || item.toLowerCase().includes('jdk') || item.toLowerCase().includes('jre'));
-        for (const subdir of subdirs) {
-          const javaPath = path + subdir + '/bin/java.exe';
-          if (fs.existsSync(javaPath)) {
-            try {
-              const versionResult = await new Promise<string>((resolve, reject) => {
-                const child = require('child_process').spawn(javaPath, ['-version']);
-                let output = '';
-                child.stderr.on('data', (data: Buffer) => {
-                  output += data.toString();
-                });
-                child.on('close', (code) => {
-                  if (code === 0) {
-                    resolve(output);
-                  } else {
-                    reject(new Error('Error getting version'));
-                  }
-                });
-              });
-
-              // Extraer la versión de Java del output
-              const versionMatch = versionResult.match(/version "([^"]+)"/);
-              if (versionMatch && versionMatch[1]) {
-                const version = versionMatch[1];
-                installations.push({ version, path: javaPath });
-              }
-            } catch (e) {
-              console.error(`Error getting version for ${javaPath}:`, e);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // También intentar encontrar Java en la variable PATH
-  try {
-    const { exec } = require('child_process');
-    const defaultJavaPath = await new Promise<string>((resolve) => {
-      exec('where java', { timeout: 5000 }, (error: any, stdout: string, stderr: string) => {
-        if (!error && stdout.trim()) {
-          resolve(stdout.trim().split('\n')[0]);
-        } else {
-          resolve('');
-        }
-      });
-    });
-
-    if (defaultJavaPath) {
-      installations.push({ version: 'PATH default', path: defaultJavaPath });
-    }
-  } catch (e) {
-    console.error('Error finding Java in PATH:', e);
-  }
-
-  return installations;
-}
 
 ipcMain.handle('game:launch', async (_e, p: { instanceId: string }) => {
   const i = listInstances().find(x => x.id === p.instanceId)
@@ -371,14 +306,44 @@ ipcMain.handle('game:launch', async (_e, p: { instanceId: string }) => {
   return { started: true }
 })
 
+// --- IPC Handlers for Java --- //
 ipcMain.handle('java:detect', async () => {
   try {
-    return javaService.detectGlobalJava();
+    return await javaService.detectJava();
   } catch (error) {
     console.error('Error detecting Java:', error);
     return [];
   }
-})
+});
+
+ipcMain.handle('java:get-all', async () => {
+  return javaService.getAllJavas();
+});
+
+ipcMain.handle('java:get-default', async () => {
+  return javaService.getDefaultJava();
+});
+
+ipcMain.handle('java:set-default', async (_event, javaId: string) => {
+  return javaService.setDefaultJava(javaId);
+});
+
+ipcMain.handle('java:remove', async (_event, javaId: string) => {
+  return javaService.removeInstalledJava(javaId);
+});
+
+ipcMain.handle('java:test', async (_event, javaPath: string) => {
+  try {
+    const isWorking = await javaService.testJava(javaPath);
+    return { isWorking };
+  } catch (error) {
+    return { isWorking: false, error: (error as Error).message };
+  }
+});
+
+ipcMain.handle('java:get-compatibility', async (_event, minecraftVersion: string) => {
+  return javaService.getMinecraftJavaCompatibility(minecraftVersion);
+});
 
 ipcMain.handle('java:explore', async () => {
   const { dialog } = require('electron');
@@ -395,88 +360,151 @@ ipcMain.handle('java:explore', async () => {
     return result.filePaths[0];
   }
   return null;
-})
+});
 
-ipcMain.handle('java:test', async (_event, javaPath: string) => {
-  try {
-    const result = javaService.testJavaBinary(javaPath);
-    return result;
-  } catch (error) {
-    console.error('Error testing Java:', error);
-    return {
-      isWorking: false,
-      error: error.message
-    };
-  }
-})
 
-ipcMain.handle('java:install', async (_event, version: string) => {
-  try {
-    // Implementar la lógica de instalación de Java
-    const javaInfo = await javaService.installRecommendedJava(version, (progress) => {
-      // Aquí podríamos emitir eventos de progreso si es necesario
-      console.log('Progreso de descarga:', progress);
+// ===== MANEJO DE DESCARGAS =====
+ipcMain.on('download:start', (event, { url, filename, itemId }) => {
+  const win = BrowserWindow.getFocusedWindow();
+  if (!win) return;
+
+  const downloadsPath = app.getPath('downloads');
+  const filePath = path.join(downloadsPath, filename);
+
+  win.webContents.downloadURL(url);
+
+  win.webContents.session.once('will-download', (e, item) => {
+    item.setSavePath(filePath);
+
+    item.on('updated', (_e, state) => {
+      if (state === 'interrupted') {
+        win.webContents.send('download:error', {
+          itemId,
+          message: 'La descarga fue interrumpida'
+        });
+      } else if (state === 'progressing') {
+        if (item.isPaused()) {
+          win.webContents.send('download:error', {
+            itemId,
+            message: 'La descarga está en pausa'
+          });
+        } else {
+          const total = item.getTotalBytes();
+          const received = item.getReceivedBytes();
+          const progress = total > 0 ? received / total : 0;
+
+          win.webContents.send('download:progress', {
+            itemId,
+            progress
+          });
+        }
+      }
     });
-    return {
-      success: true,
-      javaInfo
-    };
-  } catch (error) {
-    console.error('Error installing Java:', error);
-    return {
-      success: false,
-      message: `Error instalando Java ${version}: ${error.message || 'Error desconocido'}`
-    };
-  }
-})
 
-ipcMain.handle('java:get-all', async () => {
-  try {
-    return javaService.getAllJavas();
-  } catch (error) {
-    console.error('Error getting all Java installations:', error);
+    item.once('done', (_e, state) => {
+      if (state === 'completed') {
+        win.webContents.send('download:complete', {
+          itemId,
+          filePath: item.getSavePath()
+        });
+      } else {
+        win.webContents.send('download:error', {
+          itemId,
+          message: `Error en la descarga: ${state}`
+        });
+      }
+    });
+  });
+});
+
+// --- Modrinth API Integration --- //
+const MODRINTH_API_URL = 'https://api.modrinth.com/v2';
+
+// Mapeo de nuestros tipos a los tipos de proyecto de Modrinth
+const modrinthProjectTypes = {
+  modpacks: 'modpack',
+  mods: 'mod',
+  resourcepacks: 'resourcepack',
+  datapacks: 'datapack',
+  shaders: 'shader'
+};
+
+// Mapeo de tipos de carga (loaders) para Modrinth
+const modrinthLoaders = {
+  modpacks: ['forge', 'fabric', 'quilt', 'neoforge'],
+  mods: ['forge', 'fabric', 'quilt', 'neoforge'],
+  resourcepacks: [],
+  datapacks: [],
+  shaders: ['iris', 'optifine']
+};
+
+async function fetchModrinthContent(contentType: keyof typeof modrinthProjectTypes, search: string) {
+  const projectType = modrinthProjectTypes[contentType];
+  
+  if (!projectType) {
+    console.error('Tipo de contenido no válido para Modrinth:', contentType);
     return [];
   }
-})
 
-ipcMain.handle('java:get-default', async () => {
   try {
-    return javaService.getDefaultJava();
-  } catch (error) {
-    console.error('Error getting default Java:', error);
-    return null;
-  }
-})
+    // Construir la URL de búsqueda
+    const searchParams = new URLSearchParams({
+      query: search || '',
+      facets: JSON.stringify([
+        ["project_type:" + projectType],
+        ...(modrinthLoaders[contentType].length > 0 
+          ? [["categories:" + modrinthLoaders[contentType].join(" OR ")]] 
+          : [])
+      ]),
+      limit: '20',
+      index: 'relevance'
+    });
 
-ipcMain.handle('java:set-default', async (_event, javaId: string) => {
-  try {
-    const result = javaService.setDefaultJava(javaId);
-    return result;
-  } catch (error) {
-    console.error('Error setting default Java:', error);
-    return false;
-  }
-})
+    const url = `${MODRINTH_API_URL}/search?${searchParams}`;
+    console.log('Buscando en Modrinth:', url);
 
-ipcMain.handle('java:remove', async (_event, javaId: string) => {
-  try {
-    const result = javaService.removeInstalledJava(javaId);
-    return result;
-  } catch (error) {
-    console.error('Error removing Java:', error);
-    return false;
-  }
-})
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'DRKLauncher/1.0 (haroldpgr@gmail.com)',
+        'Accept': 'application/json'
+      }
+    });
 
-ipcMain.handle('java:get-compatibility', async (_event, minecraftVersion: string) => {
-  try {
-    return javaService.getMinecraftJavaCompatibility(minecraftVersion);
-  } catch (error) {
-    console.error('Error getting Java compatibility:', error);
-    return null;
-  }
-})
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`Error al buscar en Modrinth: ${response.status} ${response.statusText}`, errorBody);
+      throw new Error(`Error de la API de Modrinth: ${response.statusText}`);
+    }
 
+    const json = await response.json();
+    
+    // Mapear la respuesta de Modrinth a nuestro formato
+    return json.hits.map((item: any) => ({
+      id: item.project_id || item.id,
+      title: item.title,
+      description: item.description,
+      author: item.author || 'Desconocido',
+      downloads: item.downloads || 0,
+      lastUpdated: item.date_modified || item.updated,
+      minecraftVersions: item.versions || [],
+      categories: item.categories || [],
+      imageUrl: item.icon_url || 'https://via.placeholder.com/400x200',
+      type: contentType,
+      version: item.latest_version || 'N/A',
+      downloadUrl: item.versions && item.versions.length > 0 
+        ? `https://modrinth.com/${projectType}/${item.slug}/version/${item.versions[0]}`
+        : null
+    }));
+  } catch (error) {
+    console.error('Fallo al obtener datos de Modrinth:', error);
+    return []; // Devolver un array vacío en caso de error
+  }
+}
+
+// Manejador IPC para búsquedas de Modrinth
+ipcMain.handle('modrinth:search', async (_event, { contentType, search }) => {
+  return fetchModrinthContent(contentType, search);
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

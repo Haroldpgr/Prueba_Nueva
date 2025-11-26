@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Home from './pages/Home'
+import ContentPage from './pages/ContentPage'
+import SkinPage from './pages/SkinPage'
 import Instances from './pages/Instances'
 import CreateInstance from './pages/CreateInstance'
 import Servers from './pages/Servers'
@@ -196,6 +198,10 @@ export default function App() {
           <Route path="/create" element={<CreateInstance />} />
           {/* <Route path="/settings" element={<Settings />} /> */} {/* The route is no longer needed */}
           <Route path="/servers" element={<Servers />} />
+          <Route path="/contenido" element={<ContentPage />} />
+          <Route path="/contenido/:type" element={<ContentPage />} />
+          <Route path="/contenido/:type/:id" element={<ContentPage />} />
+          <Route path="/skins" element={<SkinPage />} />
           <Route path="/crash" element={<CrashAnalyzer />} />
           <Route path="/import" element={<ModpackImporter />} />
           <Route path="/downloads" element={<DownloadsView />} />

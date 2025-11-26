@@ -89,14 +89,41 @@ function getStoredSettings(): Settings {
   if (settingsJson) {
     try {
       const stored = JSON.parse(settingsJson);
-      // Merge with defaults to ensure new settings are included
-      return { ...DEFAULT_SETTINGS, ...stored };
+      // Deep merge with defaults to ensure nested objects are properly merged
+      return deepMerge(DEFAULT_SETTINGS, stored);
     } catch (error) {
       console.error('Error parsing settings:', error);
       return DEFAULT_SETTINGS;
     }
   }
   return DEFAULT_SETTINGS;
+}
+
+// Helper function for deep merging objects
+function deepMerge(target: any, source: any): any {
+  const output = { ...target };
+  
+  if (isObject(target) && isObject(source)) {
+    Object.keys(source).forEach(key => {
+      if (isObject(source[key])) {
+        if (!(key in target)) {
+          Object.assign(output, { [key]: source[key] });
+        } else {
+          output[key] = deepMerge(target[key], source[key]);
+        }
+      } else if (Array.isArray(source[key]) && Array.isArray(target[key])) {
+        output[key] = [...target[key], ...source[key]];
+      } else if (source[key] !== undefined) {
+        output[key] = source[key];
+      }
+    });
+  }
+  
+  return output;
+}
+
+function isObject(item: any): boolean {
+  return item && typeof item === 'object' && !Array.isArray(item);
 }
 
 function saveSettings(settings: Settings): void {
@@ -139,7 +166,7 @@ export const settingsService = {
     const currentSettings = getStoredSettings();
     const newSettings = {
       ...currentSettings,
-      privacy: { ...currentSettings.privacy, ...updates }
+      privacy: deepMerge(currentSettings.privacy, updates)
     };
     saveSettings(newSettings);
     return newSettings.privacy;
@@ -153,19 +180,6 @@ export const settingsService = {
     };
     saveSettings(newSettings);
     return newSettings.java;
-  },
-
-  updatePrivacy(updates: Partial<Settings['privacy']>): Settings['privacy'] {
-    const currentSettings = getStoredSettings();
-    const newSettings = {
-      ...currentSettings,
-      privacy: {
-        ...currentSettings.privacy,
-        ...updates
-      }
-    };
-    saveSettings(newSettings);
-    return newSettings.privacy;
   },
 
   addJumpBackWorld(world: JumpBackWorld): JumpBackWorld[] {
