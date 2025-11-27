@@ -9,6 +9,9 @@ import { javaDetector } from './javaDetector'
 // Import our Java service
 import javaService from './javaService';
 import fetch from 'node-fetch'; // Añadido para peticiones a la API
+import { getLauncherDataPath, ensureDir as ensureDirUtil } from '../utils/paths';
+import { instanceService, InstanceConfig } from '../services/instanceService';
+import { instanceCreationService } from '../services/instanceCreationService';
 
 let win: BrowserWindow | null = null;
 
@@ -29,11 +32,12 @@ app.whenReady().then(async () => {
 });
 
 function getUserDataPath() {
-  return app.getPath('userData');
+  // Use the centralized launcher data path utility
+  return getLauncherDataPath();
 }
 
 function ensureDir(dir: string) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return ensureDirUtil(dir);
 }
 
 async function createWindow() {
@@ -64,31 +68,24 @@ async function createWindow() {
 function basePaths() {
   const data = getUserDataPath()
   const settingsPath = path.join(data, 'settings.json')
-  // Cambiar la estructura de carpetas a .DRK Launcher
-  const drkLauncherDir = path.join(data, '.DRK Launcher')
+  // Directorio principal del launcher en la carpeta de roaming
+  const drkLauncherDir = data  // Ya está incluido en getUserDataPath()
   ensureDir(drkLauncherDir)
 
-  // Carpetas para diferentes tipos de archivos
-  const downloadsDir = path.join(drkLauncherDir, 'downloads')
-  const versionsDir = path.join(drkLauncherDir, 'versions')
-  const librariesDir = path.join(drkLauncherDir, 'libraries')
-  const configsDir = path.join(drkLauncherDir, 'configs')
+  // Directorio de instancias dentro de .DRK Launcher
+  // Esta es la estructura correcta para mantener instancias aisladas
   const instancesDir = path.join(drkLauncherDir, 'instances')
-
-  ensureDir(downloadsDir)
-  ensureDir(versionsDir)
-  ensureDir(librariesDir)
-  ensureDir(configsDir)
   ensureDir(instancesDir)
 
   return {
     data,
     settingsPath,
-    instancesBaseDefault: instancesDir,
-    downloadsBase: downloadsDir,
-    versionsBase: versionsDir,
-    librariesBase: librariesDir,
-    configsBase: configsDir
+    instancesBaseDefault: instancesDir, // Instancias en la subcarpeta instances/
+    // Todo se almacena en la carpeta principal del launcher o subcarpetas apropiadas
+    downloadsBase: drkLauncherDir,
+    versionsBase: drkLauncherDir,
+    librariesBase: drkLauncherDir,
+    configsBase: drkLauncherDir
   }
 }
 
@@ -194,11 +191,8 @@ function instancesFile() {
 
 // Crear una función para verificar si una instancia está completamente lista
 function isInstanceFullyReady(instance: Instance): boolean {
-  // Verifica si los archivos esenciales están presentes en la carpeta de la instancia
-  const clientJarPath = path.join(instance.path, 'client.jar');
-
-  // Si el archivo client.jar existe en la carpeta de la instancia, consideramos que está completamente listo
-  return fs.existsSync(clientJarPath);
+  // Usar el servicio de instancias para verificar si está lista
+  return instanceService.isInstanceReady(instance.path);
 }
 
 // Mantener la función original para compatibilidad con otros procesos internos
@@ -210,20 +204,28 @@ function saveInstances(list: Instance[]) {
   writeJSON(instancesFile(), list)
 }
 
-function createInstance(payload: { name: string; version: string; loader?: Instance['loader'] }): Instance {
-  const s = settings()
-  const id = Math.random().toString(36).slice(2)
-  const instPath = path.join(s.instancesBase || basePaths().instancesBaseDefault, id)
-  ensureDir(instPath)
-  ensureDir(path.join(instPath, 'mods'))
-  ensureDir(path.join(instPath, 'resourcepacks'))
-  ensureDir(path.join(instPath, 'shaderpacks'))
-  ensureDir(path.join(instPath, 'config'))
-  const i: Instance = { id, name: payload.name, version: payload.version, loader: payload.loader || 'vanilla', createdAt: Date.now(), path: instPath }
-  const list = listInstances()
-  list.push(i)
-  saveInstances(list)
-  return i
+function createInstance(payload: { name: string; version: string; loader?: Instance['loader'] }): InstanceConfig {
+  // Usar el servicio de instancias para crear una instancia con la estructura completa
+  const instance = instanceService.createInstance({
+    name: payload.name,
+    version: payload.version,
+    loader: payload.loader || 'vanilla'
+  });
+
+  // Añadir la instancia a la lista persistente
+  const list = listInstances();
+  const i: Instance = {
+    id: instance.id,
+    name: instance.name,
+    version: instance.version,
+    loader: instance.loader || 'vanilla',
+    createdAt: instance.createdAt,
+    path: instance.path
+  };
+  list.push(i);
+  saveInstances(list);
+
+  return i;
 }
 
 function updateInstance(id: string, patch: Partial<Instance>): Instance | null {
@@ -346,9 +348,80 @@ ipcMain.handle('game:launch', async (_e, p: { instanceId: string }) => {
     throw new Error('La instancia no está completamente descargada. Espere a que terminen las descargas.')
   }
 
-  launchJava({ javaPath: s.javaPath || 'java', mcVersion: i.version, instancePath: i.path, ramMb: i.ramMb || s.defaultRamMb }, () => {}, () => {})
+  // Usar la configuración de la instancia si está disponible
+  const instanceConfig = instanceService.getInstanceConfig(i.path);
+  const ramMb = instanceConfig?.maxMemory || i.ramMb || s.defaultRamMb;
+  const javaPath = instanceConfig?.javaPath || s.javaPath || 'java';
+
+  launchJava({
+    javaPath: javaPath,
+    mcVersion: i.version,
+    instancePath: i.path,
+    ramMb: ramMb
+  }, () => {}, () => {})
+
   return { started: true }
 })
+
+// --- IPC Handlers for Instance Creation --- //
+ipcMain.handle('instance:create-full', async (_e, payload: { name: string; version: string; loader?: Instance['loader']; javaVersion?: string }) => {
+  try {
+    const instance = await instanceCreationService.createFullInstance(
+      payload.name,
+      payload.version,
+      payload.loader || 'vanilla',
+      payload.javaVersion || '17'
+    );
+    return instance;
+  } catch (error) {
+    console.error('Error creating full instance:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('instance:install-content', async (_e, payload: {
+  instancePath: string;
+  contentId: string;
+  contentType: 'mod' | 'resourcepack' | 'shader' | 'datapack' | 'modpack';
+  mcVersion: string;
+  loader?: string;
+}) => {
+  try {
+    await instanceCreationService.installContentToInstance(
+      payload.instancePath,
+      payload.contentId,
+      payload.contentType,
+      payload.mcVersion,
+      payload.loader
+    );
+    return { success: true };
+  } catch (error) {
+    console.error('Error installing content to instance:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('instance:is-complete', async (_e, instancePath: string) => {
+  return instanceCreationService.isInstanceComplete(instancePath);
+});
+
+// --- IPC Handlers for Download Management --- //
+ipcMain.handle('downloads:get-all', async () => {
+  return downloadQueueService.getAllDownloads();
+});
+
+ipcMain.handle('downloads:get-status', async (_e, downloadId: string) => {
+  return downloadQueueService.getDownloadStatus(downloadId);
+});
+
+ipcMain.handle('downloads:cancel', async (_e, downloadId: string) => {
+  return downloadQueueService.cancelDownload(downloadId);
+});
+
+ipcMain.handle('downloads:restart', async (_e, downloadId: string) => {
+  const result = await downloadQueueService.restartDownload(downloadId);
+  return result !== null;
+});
 
 // --- IPC Handlers for Java --- //
 ipcMain.handle('java:detect', async () => {
@@ -431,9 +504,9 @@ ipcMain.on('download:start', async (event, { url, filename, itemId }) => {
   // Limpiar el nombre de archivo para evitar caracteres problemáticos
   const cleanFilename = sanitizeFileName(filename);
 
-  // Guardar en el directorio de descargas del launcher (en .DRK Launcher/downloads)
+  // Guardar en el directorio principal del launcher (.DRK Launcher)
   const { downloadsBase } = basePaths();
-  const downloadPath = downloadsBase; // Usar la carpeta de descargas principal
+  const downloadPath = downloadsBase; // Usar la carpeta principal del launcher
   ensureDir(downloadPath);
 
   // Crear la ruta completa del archivo y asegurarse de que los directorios existan

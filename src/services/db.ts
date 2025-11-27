@@ -1,6 +1,6 @@
 import path from 'node:path'
-import fs from 'node:fs'
 import { app } from 'electron'
+import { getLauncherDataPath, ensureDir } from '../utils/paths'
 
 type DB = {
   ready: boolean
@@ -12,7 +12,10 @@ let db: DB = { ready: false, instance: null }
 export function initDB() {
   try {
     const Database = require('better-sqlite3')
-    const file = path.join(app.getPath('userData'), 'drk.sqlite')
+    // Usar la carpeta .DRK Launcher en lugar del directorio predeterminado
+    const drkLauncherDir = getLauncherDataPath();
+    ensureDir(drkLauncherDir);
+    const file = path.join(drkLauncherDir, 'drk.sqlite')
     db.instance = new Database(file)
     db.instance.pragma('journal_mode = WAL')
     db.instance.exec(`
