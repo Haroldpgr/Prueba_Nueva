@@ -1,5 +1,6 @@
 // src/renderer/services/downloadService.ts
 import { settingsService } from './settingsService';
+import { notificationService } from './notificationService';
 
 export interface Download {
   id: string;
@@ -18,6 +19,7 @@ export interface Download {
 export class DownloadService {
   private downloads: Map<string, Download> = new Map();
   private observers: Array<(downloads: Download[]) => void> = [];
+  private downloadNotifications: Map<string, string> = new Map(); // Mapa de downloadId a notificationId
 
   constructor() {
     // Registrar listeners globales para los eventos de descarga
@@ -40,6 +42,12 @@ export class DownloadService {
       const elapsedSeconds = (Date.now() - download.startTime) / 1000;
       if (elapsedSeconds > 0) {
         download.speed = Math.round(download.downloadedBytes / elapsedSeconds);
+      }
+
+      // Actualizar notificación de progreso si existe
+      const notificationId = this.downloadNotifications.get(data.itemId);
+      if (notificationId) {
+        notificationService.updateProgress(notificationId, download.progress, `${download.name} - ${download.progress}%`);
       }
 
       this.notifyObservers();
@@ -70,6 +78,12 @@ export class DownloadService {
               group.speed = Math.round(groupDownloadedBytes / groupElapsedSeconds);
             }
 
+            // Actualizar notificación del grupo si existe
+            const groupNotificationId = this.downloadNotifications.get(groupId);
+            if (groupNotificationId) {
+              notificationService.updateProgress(groupNotificationId, group.progress, `${group.name} - ${group.progress}%`);
+            }
+
             this.notifyObservers();
           }
           break; // Solo actualizar el primer grupo encontrado
@@ -85,6 +99,27 @@ export class DownloadService {
       download.progress = 100;
       download.endTime = Date.now();
       download.path = data.filePath;
+
+      // Mostrar notificación de éxito
+      const notificationId = this.downloadNotifications.get(data.itemId);
+      if (notificationId) {
+        // Actualizar la notificación existente a completado
+        notificationService.updateProgress(notificationId, 100, `${download.name} - ¡Completado!`);
+        // Programar el cierre de la notificación de éxito
+        setTimeout(() => {
+          notificationService.dismiss(notificationId);
+          this.downloadNotifications.delete(data.itemId); // Limpiar el registro
+        }, 3000);
+      } else {
+        // Si no había notificación activa, crear una nueva
+        notificationService.show({
+          title: 'Descarga completada',
+          message: download.name,
+          type: 'success',
+          showProgress: false
+        });
+      }
+
       this.notifyObservers();
     }
   }
@@ -94,6 +129,23 @@ export class DownloadService {
     if (download) {
       download.status = 'error';
       download.endTime = Date.now();
+
+      // Mostrar notificación de error
+      const notificationId = this.downloadNotifications.get(error.itemId);
+      if (notificationId) {
+        notificationService.updateProgress(notificationId, 0, `${download.name} - Error: ${error.message}`);
+        // Cambiar tipo de notificación a error
+        // Nota: Esto requiere una actualización del servicio de notificaciones
+        // Por ahora, simplemente actualizamos el mensaje y lo mantenemos visible
+      } else {
+        notificationService.show({
+          title: 'Error en descarga',
+          message: `${download.name} - ${error.message}`,
+          type: 'error',
+          showProgress: false
+        });
+      }
+
       this.notifyObservers();
     }
   }
@@ -128,6 +180,19 @@ export class DownloadService {
     };
 
     this.downloads.set(downloadId, newDownload);
+
+    // Mostrar notificación de inicio de descarga
+    const notificationId = notificationService.show({
+      title: 'Iniciando descarga',
+      message: name,
+      type: 'info',
+      progress: 0,
+      showProgress: true
+    });
+
+    // Registrar la notificación para actualizaciones futuras
+    this.downloadNotifications.set(downloadId, notificationId);
+
     this.notifyObservers();
 
     // Iniciar la descarga real usando el API de Electron
@@ -224,6 +289,19 @@ export class DownloadService {
     };
 
     this.downloads.set(groupId, groupDownload);
+
+    // Mostrar notificación de inicio de instalación de instancia
+    const groupNotificationId = notificationService.show({
+      title: 'Instalando Instancia',
+      message: `Instalando ${instanceName} (${filesToDownload.length} archivos)`,
+      type: 'info',
+      progress: 0,
+      showProgress: true
+    });
+
+    // Registrar la notificación para actualizaciones futuras
+    this.downloadNotifications.set(groupId, groupNotificationId);
+
     this.notifyObservers();
 
     // Almacenar el progreso de la descarga agrupada
@@ -278,6 +356,9 @@ export class DownloadService {
       const groupProgress = Math.round((completedCount / filesToDownload.length) * 100);
       groupDownload.progress = Math.min(100, groupProgress); // No exceder 100%
 
+      // Actualizar notificación de la descarga agrupada
+      notificationService.updateProgress(groupNotificationId, groupProgress, `${instanceName} - ${completedCount}/${filesToDownload.length} archivos`);
+
       this.notifyObservers();
     }
 
@@ -285,6 +366,15 @@ export class DownloadService {
     groupDownload.status = 'completed';
     groupDownload.progress = 100;
     groupDownload.endTime = Date.now();
+
+    // Actualizar notificación de la descarga agrupada a completado
+    notificationService.updateProgress(groupNotificationId, 100, `${instanceName} - ¡Instalación completada!`);
+
+    // Programar el cierre de la notificación de éxito
+    setTimeout(() => {
+      notificationService.dismiss(groupNotificationId);
+      this.downloadNotifications.delete(groupId); // Limpiar el registro
+    }, 5000);
 
     this.notifyObservers();
 

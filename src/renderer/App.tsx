@@ -15,6 +15,7 @@ import LoginModal from './components/LoginModal' // Import the new LoginModal
 import { profileService, type Profile } from './services/profileService' // Import the actual profile service
 import { themeService } from './services/themeService';
 import { processMonitorService } from './services/processMonitorService';
+import NotificationContainer from './components/NotificationContainer';
 
 export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light' | 'oled'>('dark')
@@ -216,6 +217,7 @@ export default function App() {
         onMicrosoftLogin={handleMicrosoftLogin}
         onNonPremiumLogin={handleNonPremiumLogin}
       />
+      <NotificationContainer />
     </div>
   )
 }
