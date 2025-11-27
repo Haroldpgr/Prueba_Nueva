@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import fetch from 'node-fetch';
 import { getLauncherDataPath } from '../utils/paths';
 import { downloadQueueService } from './downloadQueueService';
+import { ModrinthVersion } from './modDownloadService';
 
 const pipelineAsync = promisify(pipeline);
 
@@ -24,41 +25,86 @@ export class ModrinthDownloadService {
   }
 
   /**
-   * Descarga un mod, resource pack o shader pack simple
+   * Obtiene todas las versiones disponibles de un proyecto en Modrinth
    * @param projectId ID del proyecto en Modrinth
-   * @param instancePath Ruta de la instancia donde instalar
-   * @param mcVersion Versión de Minecraft objetivo
-   * @param loader Tipo de mod loader (fabric, forge, etc.)
-   * @param contentType Tipo de contenido (mod, resourcepack, shader)
+   * @returns Lista de versiones disponibles
    */
-  public async downloadContent(
-    projectId: string, 
-    instancePath: string, 
-    mcVersion: string, 
-    loader?: string, 
-    contentType: 'mod' | 'resourcepack' | 'shader' | 'datapack' = 'mod'
-  ): Promise<void> {
+  public async getAvailableVersions(
+    projectId: string
+  ): Promise<ModrinthVersion[]> {
     try {
-      // Obtener información de la versión que coincida con la versión de MC y loader
       const versionsUrl = `https://api.modrinth.com/v2/project/${projectId}/version`;
       const response = await fetch(versionsUrl, {
         headers: {
           'User-Agent': 'DRK-Launcher/1.0 (contacto@drklauncher.com)'
         }
       });
-      
+
       if (!response.ok) {
         throw new Error(`Error al obtener versiones del proyecto ${projectId}`);
       }
-      
+
       const versions = await response.json();
-      
-      // Buscar la versión que coincida con la versión de Minecraft y loader
-      const targetVersion = this.findMatchingVersion(versions, mcVersion, loader);
-      if (!targetVersion) {
-        throw new Error(`No se encontró una versión compatible para ${mcVersion} y ${loader || 'cualquier loader'}`);
+      return versions as ModrinthVersion[];
+    } catch (error) {
+      console.error(`Error al obtener versiones del proyecto ${projectId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Filtra versiones para encontrar las compatibles
+   * @param projectId ID del proyecto en Modrinth
+   * @param mcVersion Versión de Minecraft objetivo
+   * @param loader Tipo de mod loader (fabric, forge, etc.)
+   * @returns Lista de versiones compatibles
+   */
+  public async getCompatibleVersions(
+    projectId: string,
+    mcVersion: string,
+    loader?: string
+  ): Promise<ModrinthVersion[]> {
+    const allVersions = await this.getAvailableVersions(projectId);
+    return downloadQueueService.findCompatibleVersions(allVersions, mcVersion, loader);
+  }
+
+  /**
+   * Descarga un mod, resource pack o shader pack simple
+   * @param projectId ID del proyecto en Modrinth
+   * @param versionId ID específico de la versión a descargar (opcional, si no se proporciona se usa la más reciente compatible)
+   * @param instancePath Ruta de la instancia donde instalar
+   * @param mcVersion Versión de Minecraft objetivo
+   * @param loader Tipo de mod loader (fabric, forge, etc.)
+   * @param contentType Tipo de contenido (mod, resourcepack, shader)
+   */
+  public async downloadContent(
+    projectId: string,
+    instancePath: string,
+    mcVersion: string,
+    loader?: string,
+    contentType: 'mod' | 'resourcepack' | 'shader' | 'datapack' = 'mod',
+    versionId?: string  // Nuevo parámetro para seleccionar una versión específica
+  ): Promise<void> {
+    try {
+      let targetVersion: ModrinthVersion | null = null;
+
+      if (versionId) {
+        // Si se especificó un ID de versión específico, buscar esa versión exacta
+        const allVersions = await this.getAvailableVersions(projectId);
+        targetVersion = allVersions.find(v => v.id === versionId) || null;
+      } else {
+        // De lo contrario, buscar versiones compatibles y tomar la más reciente
+        const compatibleVersions = await this.getCompatibleVersions(projectId, mcVersion, loader);
+        targetVersion = compatibleVersions.length > 0 ? compatibleVersions[0] : null;
       }
-      
+
+      if (!targetVersion) {
+        const errorMessage = versionId
+          ? `Versión específica ${versionId} no encontrada para el proyecto ${projectId}`
+          : `No se encontró una versión compatible para ${mcVersion} y ${loader || 'cualquier loader'}`;
+        throw new Error(errorMessage);
+      }
+
       // Determinar carpeta de destino según tipo de contenido
       let targetDir: string;
       switch (contentType) {
@@ -77,27 +123,39 @@ export class ModrinthDownloadService {
         default:
           throw new Error(`Tipo de contenido no soportado: ${contentType}`);
       }
-      
+
       this.ensureDir(targetDir);
-      
-      // Obtener URL de descarga del primer archivo
-      const downloadUrl = targetVersion.files[0]?.url;
-      if (!downloadUrl) {
-        throw new Error(`No se encontró URL de descarga para el proyecto ${projectId}`);
+
+      // Obtener archivo principal (el que está marcado como primario o el primero)
+      const primaryFile = targetVersion.files.find(f => f.primary) || targetVersion.files[0];
+      if (!primaryFile) {
+        throw new Error(`No se encontraron archivos para la versión ${targetVersion.id} del proyecto ${projectId}`);
       }
-      
-      // Obtener nombre de archivo
-      const fileName = targetVersion.files[0]?.filename || path.basename(new URL(downloadUrl).pathname);
+
+      const downloadUrl = primaryFile.url;
+
+      // Verificar si ya existe un archivo con el mismo nombre en la carpeta
+      const fileName = primaryFile.filename;
       const filePath = path.join(targetDir, fileName);
-      
-      // Verificar si el archivo ya existe
+
+      // Si el archivo ya existe, verificar si se quiere sobrescribir o generar un nombre único
+      let finalPath = filePath;
       if (fs.existsSync(filePath)) {
-        console.log(`El archivo ${fileName} ya existe, omitiendo descarga...`);
-        return;
+        // Generar nombre único para evitar sobrescritura
+        const ext = path.extname(fileName);
+        const nameWithoutExt = path.basename(fileName, ext);
+        let counter = 1;
+        let uniqueFileName;
+
+        do {
+          uniqueFileName = `${nameWithoutExt}_${counter}${ext}`;
+          finalPath = path.join(targetDir, uniqueFileName);
+          counter++;
+        } while (fs.existsSync(finalPath));
       }
-      
+
       // Descargar archivo
-      await this.downloadFile(downloadUrl, filePath);
+      await this.downloadFile(downloadUrl, finalPath);
       console.log(`Descargado ${fileName} en ${targetDir}`);
     } catch (error) {
       console.error(`Error al descargar contenido ${contentType} ${projectId}:`, error);

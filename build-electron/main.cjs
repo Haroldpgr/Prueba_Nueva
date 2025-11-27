@@ -1603,8 +1603,8 @@ var require_URL = __commonJS({
     var utils = require_utils();
     var Impl = require_URL_impl();
     var impl = utils.implSymbol;
-    function URL2(url) {
-      if (!this || this[impl] || !(this instanceof URL2)) {
+    function URL(url) {
+      if (!this || this[impl] || !(this instanceof URL)) {
         throw new TypeError("Failed to construct 'URL': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
       }
       if (arguments.length < 1) {
@@ -1620,7 +1620,7 @@ var require_URL = __commonJS({
       }
       module2.exports.setup(this, args);
     }
-    URL2.prototype.toJSON = function toJSON() {
+    URL.prototype.toJSON = function toJSON() {
       if (!this || !module2.exports.is(this)) {
         throw new TypeError("Illegal invocation");
       }
@@ -1630,7 +1630,7 @@ var require_URL = __commonJS({
       }
       return this[impl].toJSON.apply(this[impl], args);
     };
-    Object.defineProperty(URL2.prototype, "href", {
+    Object.defineProperty(URL.prototype, "href", {
       get() {
         return this[impl].href;
       },
@@ -1641,20 +1641,20 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    URL2.prototype.toString = function() {
+    URL.prototype.toString = function() {
       if (!this || !module2.exports.is(this)) {
         throw new TypeError("Illegal invocation");
       }
       return this.href;
     };
-    Object.defineProperty(URL2.prototype, "origin", {
+    Object.defineProperty(URL.prototype, "origin", {
       get() {
         return this[impl].origin;
       },
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "protocol", {
+    Object.defineProperty(URL.prototype, "protocol", {
       get() {
         return this[impl].protocol;
       },
@@ -1665,7 +1665,7 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "username", {
+    Object.defineProperty(URL.prototype, "username", {
       get() {
         return this[impl].username;
       },
@@ -1676,7 +1676,7 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "password", {
+    Object.defineProperty(URL.prototype, "password", {
       get() {
         return this[impl].password;
       },
@@ -1687,7 +1687,7 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "host", {
+    Object.defineProperty(URL.prototype, "host", {
       get() {
         return this[impl].host;
       },
@@ -1698,7 +1698,7 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "hostname", {
+    Object.defineProperty(URL.prototype, "hostname", {
       get() {
         return this[impl].hostname;
       },
@@ -1709,7 +1709,7 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "port", {
+    Object.defineProperty(URL.prototype, "port", {
       get() {
         return this[impl].port;
       },
@@ -1720,7 +1720,7 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "pathname", {
+    Object.defineProperty(URL.prototype, "pathname", {
       get() {
         return this[impl].pathname;
       },
@@ -1731,7 +1731,7 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "search", {
+    Object.defineProperty(URL.prototype, "search", {
       get() {
         return this[impl].search;
       },
@@ -1742,7 +1742,7 @@ var require_URL = __commonJS({
       enumerable: true,
       configurable: true
     });
-    Object.defineProperty(URL2.prototype, "hash", {
+    Object.defineProperty(URL.prototype, "hash", {
       get() {
         return this[impl].hash;
       },
@@ -1758,7 +1758,7 @@ var require_URL = __commonJS({
         return !!obj && obj[impl] instanceof Impl.implementation;
       },
       create(constructorArgs, privateData) {
-        let obj = Object.create(URL2.prototype);
+        let obj = Object.create(URL.prototype);
         this.setup(obj, constructorArgs, privateData);
         return obj;
       },
@@ -1768,10 +1768,10 @@ var require_URL = __commonJS({
         obj[impl] = new Impl.implementation(constructorArgs, privateData);
         obj[impl][utils.wrapperSymbol] = obj;
       },
-      interface: URL2,
+      interface: URL,
       expose: {
-        Window: { URL: URL2 },
-        Worker: { URL: URL2 }
+        Window: { URL },
+        Worker: { URL }
       }
     };
   }
@@ -2618,12 +2618,12 @@ var require_lib2 = __commonJS({
       configurable: true
     });
     var INTERNALS$2 = Symbol("Request internals");
-    var URL2 = Url.URL || whatwgUrl.URL;
+    var URL = Url.URL || whatwgUrl.URL;
     var parse_url = Url.parse;
     var format_url = Url.format;
     function parseURL(urlStr) {
       if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.exec(urlStr)) {
-        urlStr = new URL2(urlStr).toString();
+        urlStr = new URL(urlStr).toString();
       }
       return parse_url(urlStr);
     }
@@ -4380,14 +4380,11 @@ var ModrinthDownloadService = class {
     }
   }
   /**
-   * Descarga un mod, resource pack o shader pack simple
+   * Obtiene todas las versiones disponibles de un proyecto en Modrinth
    * @param projectId ID del proyecto en Modrinth
-   * @param instancePath Ruta de la instancia donde instalar
-   * @param mcVersion Versión de Minecraft objetivo
-   * @param loader Tipo de mod loader (fabric, forge, etc.)
-   * @param contentType Tipo de contenido (mod, resourcepack, shader)
+   * @returns Lista de versiones disponibles
    */
-  async downloadContent(projectId, instancePath, mcVersion, loader, contentType = "mod") {
+  async getAvailableVersions(projectId) {
     try {
       const versionsUrl = `https://api.modrinth.com/v2/project/${projectId}/version`;
       const response = await (0, import_node_fetch4.default)(versionsUrl, {
@@ -4399,9 +4396,45 @@ var ModrinthDownloadService = class {
         throw new Error(`Error al obtener versiones del proyecto ${projectId}`);
       }
       const versions = await response.json();
-      const targetVersion = this.findMatchingVersion(versions, mcVersion, loader);
+      return versions;
+    } catch (error) {
+      console.error(`Error al obtener versiones del proyecto ${projectId}:`, error);
+      throw error;
+    }
+  }
+  /**
+   * Filtra versiones para encontrar las compatibles
+   * @param projectId ID del proyecto en Modrinth
+   * @param mcVersion Versión de Minecraft objetivo
+   * @param loader Tipo de mod loader (fabric, forge, etc.)
+   * @returns Lista de versiones compatibles
+   */
+  async getCompatibleVersions(projectId, mcVersion, loader) {
+    const allVersions = await this.getAvailableVersions(projectId);
+    return downloadQueueService2.findCompatibleVersions(allVersions, mcVersion, loader);
+  }
+  /**
+   * Descarga un mod, resource pack o shader pack simple
+   * @param projectId ID del proyecto en Modrinth
+   * @param versionId ID específico de la versión a descargar (opcional, si no se proporciona se usa la más reciente compatible)
+   * @param instancePath Ruta de la instancia donde instalar
+   * @param mcVersion Versión de Minecraft objetivo
+   * @param loader Tipo de mod loader (fabric, forge, etc.)
+   * @param contentType Tipo de contenido (mod, resourcepack, shader)
+   */
+  async downloadContent(projectId, instancePath, mcVersion, loader, contentType = "mod", versionId) {
+    try {
+      let targetVersion = null;
+      if (versionId) {
+        const allVersions = await this.getAvailableVersions(projectId);
+        targetVersion = allVersions.find((v) => v.id === versionId) || null;
+      } else {
+        const compatibleVersions = await this.getCompatibleVersions(projectId, mcVersion, loader);
+        targetVersion = compatibleVersions.length > 0 ? compatibleVersions[0] : null;
+      }
       if (!targetVersion) {
-        throw new Error(`No se encontr\xF3 una versi\xF3n compatible para ${mcVersion} y ${loader || "cualquier loader"}`);
+        const errorMessage = versionId ? `Versi\xF3n espec\xEDfica ${versionId} no encontrada para el proyecto ${projectId}` : `No se encontr\xF3 una versi\xF3n compatible para ${mcVersion} y ${loader || "cualquier loader"}`;
+        throw new Error(errorMessage);
       }
       let targetDir;
       switch (contentType) {
@@ -4421,17 +4454,26 @@ var ModrinthDownloadService = class {
           throw new Error(`Tipo de contenido no soportado: ${contentType}`);
       }
       this.ensureDir(targetDir);
-      const downloadUrl = targetVersion.files[0]?.url;
-      if (!downloadUrl) {
-        throw new Error(`No se encontr\xF3 URL de descarga para el proyecto ${projectId}`);
+      const primaryFile = targetVersion.files.find((f) => f.primary) || targetVersion.files[0];
+      if (!primaryFile) {
+        throw new Error(`No se encontraron archivos para la versi\xF3n ${targetVersion.id} del proyecto ${projectId}`);
       }
-      const fileName = targetVersion.files[0]?.filename || import_node_path8.default.basename(new URL(downloadUrl).pathname);
+      const downloadUrl = primaryFile.url;
+      const fileName = primaryFile.filename;
       const filePath = import_node_path8.default.join(targetDir, fileName);
+      let finalPath = filePath;
       if (import_node_fs7.default.existsSync(filePath)) {
-        console.log(`El archivo ${fileName} ya existe, omitiendo descarga...`);
-        return;
+        const ext = import_node_path8.default.extname(fileName);
+        const nameWithoutExt = import_node_path8.default.basename(fileName, ext);
+        let counter = 1;
+        let uniqueFileName;
+        do {
+          uniqueFileName = `${nameWithoutExt}_${counter}${ext}`;
+          finalPath = import_node_path8.default.join(targetDir, uniqueFileName);
+          counter++;
+        } while (import_node_fs7.default.existsSync(finalPath));
       }
-      await this.downloadFile(downloadUrl, filePath);
+      await this.downloadFile(downloadUrl, finalPath);
       console.log(`Descargado ${fileName} en ${targetDir}`);
     } catch (error) {
       console.error(`Error al descargar contenido ${contentType} ${projectId}:`, error);
@@ -4610,7 +4652,7 @@ var ModrinthDownloadService = class {
     });
   }
 };
-var modrinthDownloadService = new ModrinthDownloadService();
+var modrinthDownloadService2 = new ModrinthDownloadService();
 
 // src/services/instanceCreationService.ts
 var InstanceCreationService = class {
@@ -4731,9 +4773,9 @@ var InstanceCreationService = class {
     }
     try {
       if (contentType === "modpack") {
-        await modrinthDownloadService.downloadModpack(contentId, instancePath, mcVersion, loader);
+        await modrinthDownloadService2.downloadModpack(contentId, instancePath, mcVersion, loader);
       } else {
-        await modrinthDownloadService.downloadContent(contentId, instancePath, mcVersion, loader, contentType);
+        await modrinthDownloadService2.downloadContent(contentId, instancePath, mcVersion, loader, contentType);
       }
       console.log(`Contenido ${contentType} ${contentId} instalado en ${instancePath}`);
     } catch (error) {
@@ -5048,13 +5090,25 @@ import_electron2.ipcMain.handle("instance:create-full", async (_e, payload) => {
 });
 import_electron2.ipcMain.handle("instance:install-content", async (_e, payload) => {
   try {
-    await instanceCreationService.installContentToInstance(
-      payload.instancePath,
-      payload.contentId,
-      payload.contentType,
-      payload.mcVersion,
-      payload.loader
-    );
+    if (payload.contentType === "modpack") {
+      await instanceCreationService.installContentToInstance(
+        payload.instancePath,
+        payload.contentId,
+        payload.contentType,
+        payload.mcVersion,
+        payload.loader
+      );
+    } else {
+      await modrinthDownloadService.downloadContent(
+        payload.contentId,
+        payload.instancePath,
+        payload.mcVersion,
+        payload.loader,
+        payload.contentType,
+        payload.versionId
+        // Pasar el ID de versión específico si se proporcionó
+      );
+    }
     return { success: true };
   } catch (error) {
     console.error("Error installing content to instance:", error);
@@ -5076,6 +5130,16 @@ import_electron2.ipcMain.handle("downloads:cancel", async (_e, downloadId) => {
 import_electron2.ipcMain.handle("downloads:restart", async (_e, downloadId) => {
   const result = await downloadQueueService.restartDownload(downloadId);
   return result !== null;
+});
+import_electron2.ipcMain.handle("modrinth:get-versions", async (_e, projectId) => {
+  return await modrinthDownloadService.getAvailableVersions(projectId);
+});
+import_electron2.ipcMain.handle("modrinth:get-compatible-versions", async (_e, payload) => {
+  return await modrinthDownloadService.getCompatibleVersions(
+    payload.projectId,
+    payload.mcVersion,
+    payload.loader
+  );
 });
 import_electron2.ipcMain.handle("java:detect", async () => {
   try {

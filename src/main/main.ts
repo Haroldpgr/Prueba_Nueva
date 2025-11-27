@@ -385,15 +385,29 @@ ipcMain.handle('instance:install-content', async (_e, payload: {
   contentType: 'mod' | 'resourcepack' | 'shader' | 'datapack' | 'modpack';
   mcVersion: string;
   loader?: string;
+  versionId?: string;  // Nuevo parámetro para versión específica
 }) => {
   try {
-    await instanceCreationService.installContentToInstance(
-      payload.instancePath,
-      payload.contentId,
-      payload.contentType,
-      payload.mcVersion,
-      payload.loader
-    );
+    if (payload.contentType === 'modpack') {
+      // Para modpacks, usar el método existente
+      await instanceCreationService.installContentToInstance(
+        payload.instancePath,
+        payload.contentId,
+        payload.contentType,
+        payload.mcVersion,
+        payload.loader
+      );
+    } else {
+      // Para otros contenidos, usar el nuevo método con selección de versión
+      await modrinthDownloadService.downloadContent(
+        payload.contentId,
+        payload.instancePath,
+        payload.mcVersion,
+        payload.loader,
+        payload.contentType,
+        payload.versionId  // Pasar el ID de versión específico si se proporcionó
+      );
+    }
     return { success: true };
   } catch (error) {
     console.error('Error installing content to instance:', error);
@@ -421,6 +435,23 @@ ipcMain.handle('downloads:cancel', async (_e, downloadId: string) => {
 ipcMain.handle('downloads:restart', async (_e, downloadId: string) => {
   const result = await downloadQueueService.restartDownload(downloadId);
   return result !== null;
+});
+
+// --- IPC Handlers for Mod Versions --- //
+ipcMain.handle('modrinth:get-versions', async (_e, projectId: string) => {
+  return await modrinthDownloadService.getAvailableVersions(projectId);
+});
+
+ipcMain.handle('modrinth:get-compatible-versions', async (_e, payload: {
+  projectId: string,
+  mcVersion: string,
+  loader?: string
+}) => {
+  return await modrinthDownloadService.getCompatibleVersions(
+    payload.projectId,
+    payload.mcVersion,
+    payload.loader
+  );
 });
 
 // --- IPC Handlers for Java --- //
