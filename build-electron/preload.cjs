@@ -26,7 +26,8 @@ import_electron.contextBridge.exposeInMainWorld("api", {
     create: (p) => import_electron.ipcRenderer.invoke("instances:create", p),
     update: (p) => import_electron.ipcRenderer.invoke("instances:update", p),
     delete: (id) => import_electron.ipcRenderer.invoke("instances:delete", id),
-    openFolder: (id) => import_electron.ipcRenderer.invoke("instances:openFolder", id)
+    openFolder: (id) => import_electron.ipcRenderer.invoke("instances:openFolder", id),
+    installContent: (payload) => import_electron.ipcRenderer.invoke("instance:install-content", payload)
   },
   // Otros APIs
   versions: {
@@ -43,6 +44,10 @@ import_electron.contextBridge.exposeInMainWorld("api", {
   },
   game: {
     launch: (p) => import_electron.ipcRenderer.invoke("game:launch", p)
+  },
+  // API de diálogo del sistema
+  dialog: {
+    showOpenDialog: (options) => import_electron.ipcRenderer.invoke("dialog:showOpenDialog", options)
   }
 });
 //# sourceMappingURL=preload.cjs.map

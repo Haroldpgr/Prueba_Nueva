@@ -12,6 +12,7 @@ import fetch from 'node-fetch'; // Añadido para peticiones a la API
 import { getLauncherDataPath, ensureDir as ensureDirUtil } from '../utils/paths';
 import { instanceService, InstanceConfig } from '../services/instanceService';
 import { instanceCreationService } from '../services/instanceCreationService';
+import { modrinthDownloadService } from '../services/modrinthDownloadService';
 
 let win: BrowserWindow | null = null;
 
@@ -452,6 +453,18 @@ ipcMain.handle('modrinth:get-compatible-versions', async (_e, payload: {
     payload.mcVersion,
     payload.loader
   );
+});
+
+// --- IPC Handlers for Dialog --- //
+ipcMain.handle('dialog:showOpenDialog', async (_e, options: any) => {
+  try {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(options);
+    return result;
+  } catch (error) {
+    console.error('Error en showOpenDialog:', error);
+    return { canceled: true, filePaths: [] };
+  }
 });
 
 // --- IPC Handlers for Java --- //

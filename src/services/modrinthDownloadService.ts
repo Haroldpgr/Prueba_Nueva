@@ -65,7 +65,15 @@ export class ModrinthDownloadService {
     loader?: string
   ): Promise<ModrinthVersion[]> {
     const allVersions = await this.getAvailableVersions(projectId);
-    return downloadQueueService.findCompatibleVersions(allVersions, mcVersion, loader);
+    // Usar el método de filtro directamente en lugar del servicio
+    return allVersions
+      .filter(version =>
+        version.game_versions.includes(mcVersion) &&
+        (!loader || version.loaders.includes(loader.toLowerCase()))
+      )
+      .sort((a, b) =>
+        new Date(b.date_published).getTime() - new Date(a.date_published).getTime()
+      );
   }
 
   /**
@@ -262,46 +270,84 @@ export class ModrinthDownloadService {
    * Extrae el manifiesto de un archivo .mrpack
    */
   private async extractModpackManifest(packPath: string): Promise<any> {
+    const nodeStreamZip = require('node-stream-zip');
+    if (!nodeStreamZip) {
+      throw new Error('node-stream-zip no está disponible');
+    }
+
     return new Promise((resolve, reject) => {
-      const zip = new require('node-stream-zip')({
-        file: packPath,
-        storeEntries: true
-      });
+      try {
+        const zip = new nodeStreamZip({
+          file: packPath,
+          storeEntries: true
+        });
 
-      zip.on('ready', () => {
-        try {
-          // Buscar el archivo de manifiesto
-          const manifestEntry = Object.keys(zip.entries()).find(entry =>
-            entry === 'modrinth.index.json' || entry.endsWith('modrinth.index.json')
-          );
+        zip.on('ready', () => {
+          try {
+            // Buscar el archivo de manifiesto
+            const manifestEntry = Object.keys(zip.entries()).find(entry =>
+              entry === 'modrinth.index.json' || entry.endsWith('modrinth.index.json')
+            );
 
-          if (!manifestEntry) {
-            reject(new Error('No se encontró el archivo modrinth.index.json en el modpack'));
-            zip.close();
-            return;
-          }
-
-          // Leer el contenido del manifiesto
-          zip.entryData(manifestEntry, (err: Error | null, data: Buffer) => {
-            zip.close();
-            if (err) {
-              reject(err);
-            } else {
-              try {
-                const manifest = JSON.parse(data.toString('utf-8'));
-                resolve(manifest);
-              } catch (parseError) {
-                reject(parseError);
-              }
+            if (!manifestEntry) {
+              reject(new Error('No se encontró el archivo modrinth.index.json en el modpack'));
+              zip.close();
+              return;
             }
-          });
-        } catch (error) {
-          zip.close();
-          reject(error);
-        }
-      });
 
-      zip.on('error', reject);
+            // Usar el método de lectura de entrada correcto
+            try {
+              const entry = zip.entry(manifestEntry);
+              if (!entry) {
+                reject(new Error('No se pudo acceder a la entrada del archivo'));
+                zip.close();
+                return;
+              }
+
+              // Leer datos usando el stream de la entrada
+              const stream = zip.stream(manifestEntry, (err: Error | null, stm: any) => {
+                if (err) {
+                  reject(err);
+                  zip.close();
+                  return;
+                }
+
+                const chunks: Buffer[] = [];
+                stm.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+                stm.on('end', () => {
+                  try {
+                    const data = Buffer.concat(chunks);
+                    const manifest = JSON.parse(data.toString('utf-8'));
+                    zip.close();
+                    resolve(manifest);
+                  } catch (parseError) {
+                    zip.close();
+                    reject(parseError);
+                  }
+                });
+
+                stm.on('error', (streamErr: Error) => {
+                  zip.close();
+                  reject(streamErr);
+                });
+              });
+            } catch (readError) {
+              zip.close();
+              reject(readError);
+            }
+          } catch (error) {
+            zip.close();
+            reject(error);
+          }
+        });
+
+        zip.on('error', (err: Error) => {
+          reject(err);
+        });
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
@@ -337,7 +383,7 @@ export class ModrinthDownloadService {
       } else if (filePath.startsWith('datapacks/')) {
         targetDir = path.join(instancePath, 'datapacks');
       } else {
-        // Para otros archivos que no están en carpetas específicas, 
+        // Para otros archivos que no están en carpetas específicas,
         // intentar adivinar la carpeta destino o simplemente descargarlos
         // por ahora, los ponemos en la raíz de la instancia
         targetDir = instancePath;
@@ -356,17 +402,9 @@ export class ModrinthDownloadService {
           await this.downloadFile(downloadUrl, targetPath);
           console.log(`Descargado ${fileName} a ${targetDir}`);
         }
-      } else if (file.resources && file.resources.length > 0) {
-        // Si no hay downloads pero hay resources, se supone que se extraerá del .mrpack
-        const zip = new require('node-stream-zip')({
-          file: path.join(tempDir, path.basename(file.path)),
-          storeEntries: true
-        });
-
-        // En este caso, extraer el archivo directamente desde el .mrpack
-        // Si está en la raíz del .mrpack, no se descarga, solo se mueve
-        // TODO: Implementar lógica de extracción desde el .mrpack
       }
+      // Nota: La lógica de extracción desde el .mrpack se maneja antes de llamar a esta función
+      // cuando se procesa el archivo modrinth.index.json
     }
   }
 

@@ -34,7 +34,8 @@ contextBridge.exposeInMainWorld('api', {
     create: (p: unknown) => ipcRenderer.invoke('instances:create', p),
     update: (p: unknown) => ipcRenderer.invoke('instances:update', p),
     delete: (id: string) => ipcRenderer.invoke('instances:delete', id),
-    openFolder: (id: string) => ipcRenderer.invoke('instances:openFolder', id)
+    openFolder: (id: string) => ipcRenderer.invoke('instances:openFolder', id),
+    installContent: (payload: unknown) => ipcRenderer.invoke('instance:install-content', payload)
   },
 
   // Otros APIs
@@ -55,6 +56,11 @@ contextBridge.exposeInMainWorld('api', {
 
   game: {
     launch: (p: unknown) => ipcRenderer.invoke('game:launch', p)
+  },
+
+  // API de diálogo del sistema
+  dialog: {
+    showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options)
   }
 });
 
@@ -81,6 +87,7 @@ declare global {
         update: (p: unknown) => Promise<any>;
         delete: (id: string) => Promise<any>;
         openFolder: (id: string) => Promise<any>;
+        installContent: (payload: unknown) => Promise<any>;
       };
       versions: {
         list: () => Promise<any>;
@@ -96,6 +103,9 @@ declare global {
       };
       game: {
         launch: (p: unknown) => Promise<any>;
+      };
+      dialog: {
+        showOpenDialog: (options: any) => Promise<any>;
       };
     };
   }

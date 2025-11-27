@@ -146,30 +146,41 @@ export class JavaDownloadService {
    * Extrae el archivo ZIP de Java en la carpeta de destino
    */
   private async extractJavaArchive(archivePath: string, extractTo: string): Promise<void> {
+    const nodeStreamZip = require('node-stream-zip');
+    if (!nodeStreamZip) {
+      throw new Error('node-stream-zip no está disponible');
+    }
+
     return new Promise((resolve, reject) => {
-      const zip = new require('node-stream-zip')({
-        file: archivePath,
-        storeEntries: true
-      });
+      try {
+        const zip = new nodeStreamZip({
+          file: archivePath,
+          storeEntries: true
+        });
 
-      zip.on('ready', () => {
-        try {
-          // Extraer todo el contenido
-          zip.extract(null, extractTo, (err: Error | null) => {
+        zip.on('ready', () => {
+          try {
+            // Extraer todo el contenido
+            zip.extract(null, extractTo, (err: Error | null) => {
+              zip.close();
+              if (err) {
+                reject(err);
+              } else {
+                resolve();
+              }
+            });
+          } catch (error) {
             zip.close();
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        } catch (error) {
-          zip.close();
-          reject(error);
-        }
-      });
+            reject(error);
+          }
+        });
 
-      zip.on('error', reject);
+        zip.on('error', (err: Error) => {
+          reject(err);
+        });
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 }

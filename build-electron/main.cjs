@@ -3032,6 +3032,1136 @@ var require_lib2 = __commonJS({
   }
 });
 
+// node_modules/node-stream-zip/node_stream_zip.js
+var require_node_stream_zip = __commonJS({
+  "node_modules/node-stream-zip/node_stream_zip.js"(exports2, module2) {
+    var fs10 = require("fs");
+    var util = require("util");
+    var path11 = require("path");
+    var events = require("events");
+    var zlib = require("zlib");
+    var stream = require("stream");
+    var consts = {
+      /* The local file header */
+      LOCHDR: 30,
+      // LOC header size
+      LOCSIG: 67324752,
+      // "PK\003\004"
+      LOCVER: 4,
+      // version needed to extract
+      LOCFLG: 6,
+      // general purpose bit flag
+      LOCHOW: 8,
+      // compression method
+      LOCTIM: 10,
+      // modification time (2 bytes time, 2 bytes date)
+      LOCCRC: 14,
+      // uncompressed file crc-32 value
+      LOCSIZ: 18,
+      // compressed size
+      LOCLEN: 22,
+      // uncompressed size
+      LOCNAM: 26,
+      // filename length
+      LOCEXT: 28,
+      // extra field length
+      /* The Data descriptor */
+      EXTSIG: 134695760,
+      // "PK\007\008"
+      EXTHDR: 16,
+      // EXT header size
+      EXTCRC: 4,
+      // uncompressed file crc-32 value
+      EXTSIZ: 8,
+      // compressed size
+      EXTLEN: 12,
+      // uncompressed size
+      /* The central directory file header */
+      CENHDR: 46,
+      // CEN header size
+      CENSIG: 33639248,
+      // "PK\001\002"
+      CENVEM: 4,
+      // version made by
+      CENVER: 6,
+      // version needed to extract
+      CENFLG: 8,
+      // encrypt, decrypt flags
+      CENHOW: 10,
+      // compression method
+      CENTIM: 12,
+      // modification time (2 bytes time, 2 bytes date)
+      CENCRC: 16,
+      // uncompressed file crc-32 value
+      CENSIZ: 20,
+      // compressed size
+      CENLEN: 24,
+      // uncompressed size
+      CENNAM: 28,
+      // filename length
+      CENEXT: 30,
+      // extra field length
+      CENCOM: 32,
+      // file comment length
+      CENDSK: 34,
+      // volume number start
+      CENATT: 36,
+      // internal file attributes
+      CENATX: 38,
+      // external file attributes (host system dependent)
+      CENOFF: 42,
+      // LOC header offset
+      /* The entries in the end of central directory */
+      ENDHDR: 22,
+      // END header size
+      ENDSIG: 101010256,
+      // "PK\005\006"
+      ENDSIGFIRST: 80,
+      ENDSUB: 8,
+      // number of entries on this disk
+      ENDTOT: 10,
+      // total number of entries
+      ENDSIZ: 12,
+      // central directory size in bytes
+      ENDOFF: 16,
+      // offset of first CEN header
+      ENDCOM: 20,
+      // zip file comment length
+      MAXFILECOMMENT: 65535,
+      /* The entries in the end of ZIP64 central directory locator */
+      ENDL64HDR: 20,
+      // ZIP64 end of central directory locator header size
+      ENDL64SIG: 117853008,
+      // ZIP64 end of central directory locator signature
+      ENDL64SIGFIRST: 80,
+      ENDL64OFS: 8,
+      // ZIP64 end of central directory offset
+      /* The entries in the end of ZIP64 central directory */
+      END64HDR: 56,
+      // ZIP64 end of central directory header size
+      END64SIG: 101075792,
+      // ZIP64 end of central directory signature
+      END64SIGFIRST: 80,
+      END64SUB: 24,
+      // number of entries on this disk
+      END64TOT: 32,
+      // total number of entries
+      END64SIZ: 40,
+      END64OFF: 48,
+      /* Compression methods */
+      STORED: 0,
+      // no compression
+      SHRUNK: 1,
+      // shrunk
+      REDUCED1: 2,
+      // reduced with compression factor 1
+      REDUCED2: 3,
+      // reduced with compression factor 2
+      REDUCED3: 4,
+      // reduced with compression factor 3
+      REDUCED4: 5,
+      // reduced with compression factor 4
+      IMPLODED: 6,
+      // imploded
+      // 7 reserved
+      DEFLATED: 8,
+      // deflated
+      ENHANCED_DEFLATED: 9,
+      // deflate64
+      PKWARE: 10,
+      // PKWare DCL imploded
+      // 11 reserved
+      BZIP2: 12,
+      //  compressed using BZIP2
+      // 13 reserved
+      LZMA: 14,
+      // LZMA
+      // 15-17 reserved
+      IBM_TERSE: 18,
+      // compressed using IBM TERSE
+      IBM_LZ77: 19,
+      //IBM LZ77 z
+      /* General purpose bit flag */
+      FLG_ENC: 0,
+      // encrypted file
+      FLG_COMP1: 1,
+      // compression option
+      FLG_COMP2: 2,
+      // compression option
+      FLG_DESC: 4,
+      // data descriptor
+      FLG_ENH: 8,
+      // enhanced deflation
+      FLG_STR: 16,
+      // strong encryption
+      FLG_LNG: 1024,
+      // language encoding
+      FLG_MSK: 4096,
+      // mask header values
+      FLG_ENTRY_ENC: 1,
+      /* 4.5 Extensible data fields */
+      EF_ID: 0,
+      EF_SIZE: 2,
+      /* Header IDs */
+      ID_ZIP64: 1,
+      ID_AVINFO: 7,
+      ID_PFS: 8,
+      ID_OS2: 9,
+      ID_NTFS: 10,
+      ID_OPENVMS: 12,
+      ID_UNIX: 13,
+      ID_FORK: 14,
+      ID_PATCH: 15,
+      ID_X509_PKCS7: 20,
+      ID_X509_CERTID_F: 21,
+      ID_X509_CERTID_C: 22,
+      ID_STRONGENC: 23,
+      ID_RECORD_MGT: 24,
+      ID_X509_PKCS7_RL: 25,
+      ID_IBM1: 101,
+      ID_IBM2: 102,
+      ID_POSZIP: 18064,
+      EF_ZIP64_OR_32: 4294967295,
+      EF_ZIP64_OR_16: 65535
+    };
+    var StreamZip = function(config) {
+      let fd, fileSize, chunkSize, op, centralDirectory, closed;
+      const ready = false, that = this, entries = config.storeEntries !== false ? {} : null, fileName = config.file, textDecoder = config.nameEncoding ? new TextDecoder(config.nameEncoding) : null;
+      open();
+      function open() {
+        if (config.fd) {
+          fd = config.fd;
+          readFile();
+        } else {
+          fs10.open(fileName, "r", (err, f) => {
+            if (err) {
+              return that.emit("error", err);
+            }
+            fd = f;
+            readFile();
+          });
+        }
+      }
+      function readFile() {
+        fs10.fstat(fd, (err, stat) => {
+          if (err) {
+            return that.emit("error", err);
+          }
+          fileSize = stat.size;
+          chunkSize = config.chunkSize || Math.round(fileSize / 1e3);
+          chunkSize = Math.max(
+            Math.min(chunkSize, Math.min(128 * 1024, fileSize)),
+            Math.min(1024, fileSize)
+          );
+          readCentralDirectory();
+        });
+      }
+      function readUntilFoundCallback(err, bytesRead) {
+        if (err || !bytesRead) {
+          return that.emit("error", err || new Error("Archive read error"));
+        }
+        let pos = op.lastPos;
+        let bufferPosition = pos - op.win.position;
+        const buffer = op.win.buffer;
+        const minPos = op.minPos;
+        while (--pos >= minPos && --bufferPosition >= 0) {
+          if (buffer.length - bufferPosition >= 4 && buffer[bufferPosition] === op.firstByte) {
+            if (buffer.readUInt32LE(bufferPosition) === op.sig) {
+              op.lastBufferPosition = bufferPosition;
+              op.lastBytesRead = bytesRead;
+              op.complete();
+              return;
+            }
+          }
+        }
+        if (pos === minPos) {
+          return that.emit("error", new Error("Bad archive"));
+        }
+        op.lastPos = pos + 1;
+        op.chunkSize *= 2;
+        if (pos <= minPos) {
+          return that.emit("error", new Error("Bad archive"));
+        }
+        const expandLength = Math.min(op.chunkSize, pos - minPos);
+        op.win.expandLeft(expandLength, readUntilFoundCallback);
+      }
+      function readCentralDirectory() {
+        const totalReadLength = Math.min(consts.ENDHDR + consts.MAXFILECOMMENT, fileSize);
+        op = {
+          win: new FileWindowBuffer(fd),
+          totalReadLength,
+          minPos: fileSize - totalReadLength,
+          lastPos: fileSize,
+          chunkSize: Math.min(1024, chunkSize),
+          firstByte: consts.ENDSIGFIRST,
+          sig: consts.ENDSIG,
+          complete: readCentralDirectoryComplete
+        };
+        op.win.read(fileSize - op.chunkSize, op.chunkSize, readUntilFoundCallback);
+      }
+      function readCentralDirectoryComplete() {
+        const buffer = op.win.buffer;
+        const pos = op.lastBufferPosition;
+        try {
+          centralDirectory = new CentralDirectoryHeader();
+          centralDirectory.read(buffer.slice(pos, pos + consts.ENDHDR));
+          centralDirectory.headerOffset = op.win.position + pos;
+          if (centralDirectory.commentLength) {
+            that.comment = buffer.slice(
+              pos + consts.ENDHDR,
+              pos + consts.ENDHDR + centralDirectory.commentLength
+            ).toString();
+          } else {
+            that.comment = null;
+          }
+          that.entriesCount = centralDirectory.volumeEntries;
+          that.centralDirectory = centralDirectory;
+          if (centralDirectory.volumeEntries === consts.EF_ZIP64_OR_16 && centralDirectory.totalEntries === consts.EF_ZIP64_OR_16 || centralDirectory.size === consts.EF_ZIP64_OR_32 || centralDirectory.offset === consts.EF_ZIP64_OR_32) {
+            readZip64CentralDirectoryLocator();
+          } else {
+            op = {};
+            readEntries();
+          }
+        } catch (err) {
+          that.emit("error", err);
+        }
+      }
+      function readZip64CentralDirectoryLocator() {
+        const length = consts.ENDL64HDR;
+        if (op.lastBufferPosition > length) {
+          op.lastBufferPosition -= length;
+          readZip64CentralDirectoryLocatorComplete();
+        } else {
+          op = {
+            win: op.win,
+            totalReadLength: length,
+            minPos: op.win.position - length,
+            lastPos: op.win.position,
+            chunkSize: op.chunkSize,
+            firstByte: consts.ENDL64SIGFIRST,
+            sig: consts.ENDL64SIG,
+            complete: readZip64CentralDirectoryLocatorComplete
+          };
+          op.win.read(op.lastPos - op.chunkSize, op.chunkSize, readUntilFoundCallback);
+        }
+      }
+      function readZip64CentralDirectoryLocatorComplete() {
+        const buffer = op.win.buffer;
+        const locHeader = new CentralDirectoryLoc64Header();
+        locHeader.read(
+          buffer.slice(op.lastBufferPosition, op.lastBufferPosition + consts.ENDL64HDR)
+        );
+        const readLength = fileSize - locHeader.headerOffset;
+        op = {
+          win: op.win,
+          totalReadLength: readLength,
+          minPos: locHeader.headerOffset,
+          lastPos: op.lastPos,
+          chunkSize: op.chunkSize,
+          firstByte: consts.END64SIGFIRST,
+          sig: consts.END64SIG,
+          complete: readZip64CentralDirectoryComplete
+        };
+        op.win.read(fileSize - op.chunkSize, op.chunkSize, readUntilFoundCallback);
+      }
+      function readZip64CentralDirectoryComplete() {
+        const buffer = op.win.buffer;
+        const zip64cd = new CentralDirectoryZip64Header();
+        zip64cd.read(buffer.slice(op.lastBufferPosition, op.lastBufferPosition + consts.END64HDR));
+        that.centralDirectory.volumeEntries = zip64cd.volumeEntries;
+        that.centralDirectory.totalEntries = zip64cd.totalEntries;
+        that.centralDirectory.size = zip64cd.size;
+        that.centralDirectory.offset = zip64cd.offset;
+        that.entriesCount = zip64cd.volumeEntries;
+        op = {};
+        readEntries();
+      }
+      function readEntries() {
+        op = {
+          win: new FileWindowBuffer(fd),
+          pos: centralDirectory.offset,
+          chunkSize,
+          entriesLeft: centralDirectory.volumeEntries
+        };
+        op.win.read(op.pos, Math.min(chunkSize, fileSize - op.pos), readEntriesCallback);
+      }
+      function readEntriesCallback(err, bytesRead) {
+        if (err || !bytesRead) {
+          return that.emit("error", err || new Error("Entries read error"));
+        }
+        let bufferPos = op.pos - op.win.position;
+        let entry = op.entry;
+        const buffer = op.win.buffer;
+        const bufferLength = buffer.length;
+        try {
+          while (op.entriesLeft > 0) {
+            if (!entry) {
+              entry = new ZipEntry();
+              entry.readHeader(buffer, bufferPos);
+              entry.headerOffset = op.win.position + bufferPos;
+              op.entry = entry;
+              op.pos += consts.CENHDR;
+              bufferPos += consts.CENHDR;
+            }
+            const entryHeaderSize = entry.fnameLen + entry.extraLen + entry.comLen;
+            const advanceBytes = entryHeaderSize + (op.entriesLeft > 1 ? consts.CENHDR : 0);
+            if (bufferLength - bufferPos < advanceBytes) {
+              op.win.moveRight(chunkSize, readEntriesCallback, bufferPos);
+              op.move = true;
+              return;
+            }
+            entry.read(buffer, bufferPos, textDecoder);
+            if (!config.skipEntryNameValidation) {
+              entry.validateName();
+            }
+            if (entries) {
+              entries[entry.name] = entry;
+            }
+            that.emit("entry", entry);
+            op.entry = entry = null;
+            op.entriesLeft--;
+            op.pos += entryHeaderSize;
+            bufferPos += entryHeaderSize;
+          }
+          that.emit("ready");
+        } catch (err2) {
+          that.emit("error", err2);
+        }
+      }
+      function checkEntriesExist() {
+        if (!entries) {
+          throw new Error("storeEntries disabled");
+        }
+      }
+      Object.defineProperty(this, "ready", {
+        get() {
+          return ready;
+        }
+      });
+      this.entry = function(name) {
+        checkEntriesExist();
+        return entries[name];
+      };
+      this.entries = function() {
+        checkEntriesExist();
+        return entries;
+      };
+      this.stream = function(entry, callback) {
+        return this.openEntry(
+          entry,
+          (err, entry2) => {
+            if (err) {
+              return callback(err);
+            }
+            const offset = dataOffset(entry2);
+            let entryStream = new EntryDataReaderStream(fd, offset, entry2.compressedSize);
+            if (entry2.method === consts.STORED) {
+            } else if (entry2.method === consts.DEFLATED) {
+              entryStream = entryStream.pipe(zlib.createInflateRaw());
+            } else {
+              return callback(new Error("Unknown compression method: " + entry2.method));
+            }
+            if (canVerifyCrc(entry2)) {
+              entryStream = entryStream.pipe(
+                new EntryVerifyStream(entryStream, entry2.crc, entry2.size)
+              );
+            }
+            callback(null, entryStream);
+          },
+          false
+        );
+      };
+      this.entryDataSync = function(entry) {
+        let err = null;
+        this.openEntry(
+          entry,
+          (e, en) => {
+            err = e;
+            entry = en;
+          },
+          true
+        );
+        if (err) {
+          throw err;
+        }
+        let data = Buffer.alloc(entry.compressedSize);
+        new FsRead(fd, data, 0, entry.compressedSize, dataOffset(entry), (e) => {
+          err = e;
+        }).read(true);
+        if (err) {
+          throw err;
+        }
+        if (entry.method === consts.STORED) {
+        } else if (entry.method === consts.DEFLATED || entry.method === consts.ENHANCED_DEFLATED) {
+          data = zlib.inflateRawSync(data);
+        } else {
+          throw new Error("Unknown compression method: " + entry.method);
+        }
+        if (data.length !== entry.size) {
+          throw new Error("Invalid size");
+        }
+        if (canVerifyCrc(entry)) {
+          const verify = new CrcVerify(entry.crc, entry.size);
+          verify.data(data);
+        }
+        return data;
+      };
+      this.openEntry = function(entry, callback, sync) {
+        if (typeof entry === "string") {
+          checkEntriesExist();
+          entry = entries[entry];
+          if (!entry) {
+            return callback(new Error("Entry not found"));
+          }
+        }
+        if (!entry.isFile) {
+          return callback(new Error("Entry is not file"));
+        }
+        if (!fd) {
+          return callback(new Error("Archive closed"));
+        }
+        const buffer = Buffer.alloc(consts.LOCHDR);
+        new FsRead(fd, buffer, 0, buffer.length, entry.offset, (err) => {
+          if (err) {
+            return callback(err);
+          }
+          let readEx;
+          try {
+            entry.readDataHeader(buffer);
+            if (entry.encrypted) {
+              readEx = new Error("Entry encrypted");
+            }
+          } catch (ex) {
+            readEx = ex;
+          }
+          callback(readEx, entry);
+        }).read(sync);
+      };
+      function dataOffset(entry) {
+        return entry.offset + consts.LOCHDR + entry.fnameLen + entry.extraLen;
+      }
+      function canVerifyCrc(entry) {
+        return (entry.flags & 8) !== 8;
+      }
+      function extract(entry, outPath, callback) {
+        that.stream(entry, (err, stm) => {
+          if (err) {
+            callback(err);
+          } else {
+            let fsStm, errThrown;
+            stm.on("error", (err2) => {
+              errThrown = err2;
+              if (fsStm) {
+                stm.unpipe(fsStm);
+                fsStm.close(() => {
+                  callback(err2);
+                });
+              }
+            });
+            fs10.open(outPath, "w", (err2, fdFile) => {
+              if (err2) {
+                return callback(err2);
+              }
+              if (errThrown) {
+                fs10.close(fd, () => {
+                  callback(errThrown);
+                });
+                return;
+              }
+              fsStm = fs10.createWriteStream(outPath, { fd: fdFile });
+              fsStm.on("finish", () => {
+                that.emit("extract", entry, outPath);
+                if (!errThrown) {
+                  callback();
+                }
+              });
+              stm.pipe(fsStm);
+            });
+          }
+        });
+      }
+      function createDirectories(baseDir, dirs, callback) {
+        if (!dirs.length) {
+          return callback();
+        }
+        let dir = dirs.shift();
+        dir = path11.join(baseDir, path11.join(...dir));
+        fs10.mkdir(dir, { recursive: true }, (err) => {
+          if (err && err.code !== "EEXIST") {
+            return callback(err);
+          }
+          createDirectories(baseDir, dirs, callback);
+        });
+      }
+      function extractFiles(baseDir, baseRelPath, files, callback, extractedCount) {
+        if (!files.length) {
+          return callback(null, extractedCount);
+        }
+        const file = files.shift();
+        const targetPath = path11.join(baseDir, file.name.replace(baseRelPath, ""));
+        extract(file, targetPath, (err) => {
+          if (err) {
+            return callback(err, extractedCount);
+          }
+          extractFiles(baseDir, baseRelPath, files, callback, extractedCount + 1);
+        });
+      }
+      this.extract = function(entry, outPath, callback) {
+        let entryName = entry || "";
+        if (typeof entry === "string") {
+          entry = this.entry(entry);
+          if (entry) {
+            entryName = entry.name;
+          } else {
+            if (entryName.length && entryName[entryName.length - 1] !== "/") {
+              entryName += "/";
+            }
+          }
+        }
+        if (!entry || entry.isDirectory) {
+          const files = [], dirs = [], allDirs = {};
+          for (const e in entries) {
+            if (Object.prototype.hasOwnProperty.call(entries, e) && e.lastIndexOf(entryName, 0) === 0) {
+              let relPath = e.replace(entryName, "");
+              const childEntry = entries[e];
+              if (childEntry.isFile) {
+                files.push(childEntry);
+                relPath = path11.dirname(relPath);
+              }
+              if (relPath && !allDirs[relPath] && relPath !== ".") {
+                allDirs[relPath] = true;
+                let parts = relPath.split("/").filter((f) => {
+                  return f;
+                });
+                if (parts.length) {
+                  dirs.push(parts);
+                }
+                while (parts.length > 1) {
+                  parts = parts.slice(0, parts.length - 1);
+                  const partsPath = parts.join("/");
+                  if (allDirs[partsPath] || partsPath === ".") {
+                    break;
+                  }
+                  allDirs[partsPath] = true;
+                  dirs.push(parts);
+                }
+              }
+            }
+          }
+          dirs.sort((x, y) => {
+            return x.length - y.length;
+          });
+          if (dirs.length) {
+            createDirectories(outPath, dirs, (err) => {
+              if (err) {
+                callback(err);
+              } else {
+                extractFiles(outPath, entryName, files, callback, 0);
+              }
+            });
+          } else {
+            extractFiles(outPath, entryName, files, callback, 0);
+          }
+        } else {
+          fs10.stat(outPath, (err, stat) => {
+            if (stat && stat.isDirectory()) {
+              extract(entry, path11.join(outPath, path11.basename(entry.name)), callback);
+            } else {
+              extract(entry, outPath, callback);
+            }
+          });
+        }
+      };
+      this.close = function(callback) {
+        if (closed || !fd) {
+          closed = true;
+          if (callback) {
+            callback();
+          }
+        } else {
+          closed = true;
+          fs10.close(fd, (err) => {
+            fd = null;
+            if (callback) {
+              callback(err);
+            }
+          });
+        }
+      };
+      const originalEmit = events.EventEmitter.prototype.emit;
+      this.emit = function(...args) {
+        if (!closed) {
+          return originalEmit.call(this, ...args);
+        }
+      };
+    };
+    StreamZip.setFs = function(customFs) {
+      fs10 = customFs;
+    };
+    StreamZip.debugLog = (...args) => {
+      if (StreamZip.debug) {
+        console.log(...args);
+      }
+    };
+    util.inherits(StreamZip, events.EventEmitter);
+    var propZip = Symbol("zip");
+    StreamZip.async = class StreamZipAsync extends events.EventEmitter {
+      constructor(config) {
+        super();
+        const zip = new StreamZip(config);
+        zip.on("entry", (entry) => this.emit("entry", entry));
+        zip.on("extract", (entry, outPath) => this.emit("extract", entry, outPath));
+        this[propZip] = new Promise((resolve, reject) => {
+          zip.on("ready", () => {
+            zip.removeListener("error", reject);
+            resolve(zip);
+          });
+          zip.on("error", reject);
+        });
+      }
+      get entriesCount() {
+        return this[propZip].then((zip) => zip.entriesCount);
+      }
+      get comment() {
+        return this[propZip].then((zip) => zip.comment);
+      }
+      async entry(name) {
+        const zip = await this[propZip];
+        return zip.entry(name);
+      }
+      async entries() {
+        const zip = await this[propZip];
+        return zip.entries();
+      }
+      async stream(entry) {
+        const zip = await this[propZip];
+        return new Promise((resolve, reject) => {
+          zip.stream(entry, (err, stm) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(stm);
+            }
+          });
+        });
+      }
+      async entryData(entry) {
+        const stm = await this.stream(entry);
+        return new Promise((resolve, reject) => {
+          const data = [];
+          stm.on("data", (chunk) => data.push(chunk));
+          stm.on("end", () => {
+            resolve(Buffer.concat(data));
+          });
+          stm.on("error", (err) => {
+            stm.removeAllListeners("end");
+            reject(err);
+          });
+        });
+      }
+      async extract(entry, outPath) {
+        const zip = await this[propZip];
+        return new Promise((resolve, reject) => {
+          zip.extract(entry, outPath, (err, res) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(res);
+            }
+          });
+        });
+      }
+      async close() {
+        const zip = await this[propZip];
+        return new Promise((resolve, reject) => {
+          zip.close((err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      }
+    };
+    var CentralDirectoryHeader = class {
+      read(data) {
+        if (data.length !== consts.ENDHDR || data.readUInt32LE(0) !== consts.ENDSIG) {
+          throw new Error("Invalid central directory");
+        }
+        this.volumeEntries = data.readUInt16LE(consts.ENDSUB);
+        this.totalEntries = data.readUInt16LE(consts.ENDTOT);
+        this.size = data.readUInt32LE(consts.ENDSIZ);
+        this.offset = data.readUInt32LE(consts.ENDOFF);
+        this.commentLength = data.readUInt16LE(consts.ENDCOM);
+      }
+    };
+    var CentralDirectoryLoc64Header = class {
+      read(data) {
+        if (data.length !== consts.ENDL64HDR || data.readUInt32LE(0) !== consts.ENDL64SIG) {
+          throw new Error("Invalid zip64 central directory locator");
+        }
+        this.headerOffset = readUInt64LE(data, consts.ENDSUB);
+      }
+    };
+    var CentralDirectoryZip64Header = class {
+      read(data) {
+        if (data.length !== consts.END64HDR || data.readUInt32LE(0) !== consts.END64SIG) {
+          throw new Error("Invalid central directory");
+        }
+        this.volumeEntries = readUInt64LE(data, consts.END64SUB);
+        this.totalEntries = readUInt64LE(data, consts.END64TOT);
+        this.size = readUInt64LE(data, consts.END64SIZ);
+        this.offset = readUInt64LE(data, consts.END64OFF);
+      }
+    };
+    var ZipEntry = class {
+      readHeader(data, offset) {
+        if (data.length < offset + consts.CENHDR || data.readUInt32LE(offset) !== consts.CENSIG) {
+          throw new Error("Invalid entry header");
+        }
+        this.verMade = data.readUInt16LE(offset + consts.CENVEM);
+        this.version = data.readUInt16LE(offset + consts.CENVER);
+        this.flags = data.readUInt16LE(offset + consts.CENFLG);
+        this.method = data.readUInt16LE(offset + consts.CENHOW);
+        const timebytes = data.readUInt16LE(offset + consts.CENTIM);
+        const datebytes = data.readUInt16LE(offset + consts.CENTIM + 2);
+        this.time = parseZipTime(timebytes, datebytes);
+        this.crc = data.readUInt32LE(offset + consts.CENCRC);
+        this.compressedSize = data.readUInt32LE(offset + consts.CENSIZ);
+        this.size = data.readUInt32LE(offset + consts.CENLEN);
+        this.fnameLen = data.readUInt16LE(offset + consts.CENNAM);
+        this.extraLen = data.readUInt16LE(offset + consts.CENEXT);
+        this.comLen = data.readUInt16LE(offset + consts.CENCOM);
+        this.diskStart = data.readUInt16LE(offset + consts.CENDSK);
+        this.inattr = data.readUInt16LE(offset + consts.CENATT);
+        this.attr = data.readUInt32LE(offset + consts.CENATX);
+        this.offset = data.readUInt32LE(offset + consts.CENOFF);
+      }
+      readDataHeader(data) {
+        if (data.readUInt32LE(0) !== consts.LOCSIG) {
+          throw new Error("Invalid local header");
+        }
+        this.version = data.readUInt16LE(consts.LOCVER);
+        this.flags = data.readUInt16LE(consts.LOCFLG);
+        this.method = data.readUInt16LE(consts.LOCHOW);
+        const timebytes = data.readUInt16LE(consts.LOCTIM);
+        const datebytes = data.readUInt16LE(consts.LOCTIM + 2);
+        this.time = parseZipTime(timebytes, datebytes);
+        this.crc = data.readUInt32LE(consts.LOCCRC) || this.crc;
+        const compressedSize = data.readUInt32LE(consts.LOCSIZ);
+        if (compressedSize && compressedSize !== consts.EF_ZIP64_OR_32) {
+          this.compressedSize = compressedSize;
+        }
+        const size = data.readUInt32LE(consts.LOCLEN);
+        if (size && size !== consts.EF_ZIP64_OR_32) {
+          this.size = size;
+        }
+        this.fnameLen = data.readUInt16LE(consts.LOCNAM);
+        this.extraLen = data.readUInt16LE(consts.LOCEXT);
+      }
+      read(data, offset, textDecoder) {
+        const nameData = data.slice(offset, offset += this.fnameLen);
+        this.name = textDecoder ? textDecoder.decode(new Uint8Array(nameData)) : nameData.toString("utf8");
+        const lastChar = data[offset - 1];
+        this.isDirectory = lastChar === 47 || lastChar === 92;
+        if (this.extraLen) {
+          this.readExtra(data, offset);
+          offset += this.extraLen;
+        }
+        this.comment = this.comLen ? data.slice(offset, offset + this.comLen).toString() : null;
+      }
+      validateName() {
+        if (/\\|^\w+:|^\/|(^|\/)\.\.(\/|$)/.test(this.name)) {
+          throw new Error("Malicious entry: " + this.name);
+        }
+      }
+      readExtra(data, offset) {
+        let signature, size;
+        const maxPos = offset + this.extraLen;
+        while (offset < maxPos) {
+          signature = data.readUInt16LE(offset);
+          offset += 2;
+          size = data.readUInt16LE(offset);
+          offset += 2;
+          if (consts.ID_ZIP64 === signature) {
+            this.parseZip64Extra(data, offset, size);
+          }
+          offset += size;
+        }
+      }
+      parseZip64Extra(data, offset, length) {
+        if (length >= 8 && this.size === consts.EF_ZIP64_OR_32) {
+          this.size = readUInt64LE(data, offset);
+          offset += 8;
+          length -= 8;
+        }
+        if (length >= 8 && this.compressedSize === consts.EF_ZIP64_OR_32) {
+          this.compressedSize = readUInt64LE(data, offset);
+          offset += 8;
+          length -= 8;
+        }
+        if (length >= 8 && this.offset === consts.EF_ZIP64_OR_32) {
+          this.offset = readUInt64LE(data, offset);
+          offset += 8;
+          length -= 8;
+        }
+        if (length >= 4 && this.diskStart === consts.EF_ZIP64_OR_16) {
+          this.diskStart = data.readUInt32LE(offset);
+        }
+      }
+      get encrypted() {
+        return (this.flags & consts.FLG_ENTRY_ENC) === consts.FLG_ENTRY_ENC;
+      }
+      get isFile() {
+        return !this.isDirectory;
+      }
+    };
+    var FsRead = class {
+      constructor(fd, buffer, offset, length, position, callback) {
+        this.fd = fd;
+        this.buffer = buffer;
+        this.offset = offset;
+        this.length = length;
+        this.position = position;
+        this.callback = callback;
+        this.bytesRead = 0;
+        this.waiting = false;
+      }
+      read(sync) {
+        StreamZip.debugLog("read", this.position, this.bytesRead, this.length, this.offset);
+        this.waiting = true;
+        let err;
+        if (sync) {
+          let bytesRead = 0;
+          try {
+            bytesRead = fs10.readSync(
+              this.fd,
+              this.buffer,
+              this.offset + this.bytesRead,
+              this.length - this.bytesRead,
+              this.position + this.bytesRead
+            );
+          } catch (e) {
+            err = e;
+          }
+          this.readCallback(sync, err, err ? bytesRead : null);
+        } else {
+          fs10.read(
+            this.fd,
+            this.buffer,
+            this.offset + this.bytesRead,
+            this.length - this.bytesRead,
+            this.position + this.bytesRead,
+            this.readCallback.bind(this, sync)
+          );
+        }
+      }
+      readCallback(sync, err, bytesRead) {
+        if (typeof bytesRead === "number") {
+          this.bytesRead += bytesRead;
+        }
+        if (err || !bytesRead || this.bytesRead === this.length) {
+          this.waiting = false;
+          return this.callback(err, this.bytesRead);
+        } else {
+          this.read(sync);
+        }
+      }
+    };
+    var FileWindowBuffer = class {
+      constructor(fd) {
+        this.position = 0;
+        this.buffer = Buffer.alloc(0);
+        this.fd = fd;
+        this.fsOp = null;
+      }
+      checkOp() {
+        if (this.fsOp && this.fsOp.waiting) {
+          throw new Error("Operation in progress");
+        }
+      }
+      read(pos, length, callback) {
+        this.checkOp();
+        if (this.buffer.length < length) {
+          this.buffer = Buffer.alloc(length);
+        }
+        this.position = pos;
+        this.fsOp = new FsRead(this.fd, this.buffer, 0, length, this.position, callback).read();
+      }
+      expandLeft(length, callback) {
+        this.checkOp();
+        this.buffer = Buffer.concat([Buffer.alloc(length), this.buffer]);
+        this.position -= length;
+        if (this.position < 0) {
+          this.position = 0;
+        }
+        this.fsOp = new FsRead(this.fd, this.buffer, 0, length, this.position, callback).read();
+      }
+      expandRight(length, callback) {
+        this.checkOp();
+        const offset = this.buffer.length;
+        this.buffer = Buffer.concat([this.buffer, Buffer.alloc(length)]);
+        this.fsOp = new FsRead(
+          this.fd,
+          this.buffer,
+          offset,
+          length,
+          this.position + offset,
+          callback
+        ).read();
+      }
+      moveRight(length, callback, shift) {
+        this.checkOp();
+        if (shift) {
+          this.buffer.copy(this.buffer, 0, shift);
+        } else {
+          shift = 0;
+        }
+        this.position += shift;
+        this.fsOp = new FsRead(
+          this.fd,
+          this.buffer,
+          this.buffer.length - shift,
+          shift,
+          this.position + this.buffer.length - shift,
+          callback
+        ).read();
+      }
+    };
+    var EntryDataReaderStream = class extends stream.Readable {
+      constructor(fd, offset, length) {
+        super();
+        this.fd = fd;
+        this.offset = offset;
+        this.length = length;
+        this.pos = 0;
+        this.readCallback = this.readCallback.bind(this);
+      }
+      _read(n) {
+        const buffer = Buffer.alloc(Math.min(n, this.length - this.pos));
+        if (buffer.length) {
+          fs10.read(this.fd, buffer, 0, buffer.length, this.offset + this.pos, this.readCallback);
+        } else {
+          this.push(null);
+        }
+      }
+      readCallback(err, bytesRead, buffer) {
+        this.pos += bytesRead;
+        if (err) {
+          this.emit("error", err);
+          this.push(null);
+        } else if (!bytesRead) {
+          this.push(null);
+        } else {
+          if (bytesRead !== buffer.length) {
+            buffer = buffer.slice(0, bytesRead);
+          }
+          this.push(buffer);
+        }
+      }
+    };
+    var EntryVerifyStream = class extends stream.Transform {
+      constructor(baseStm, crc, size) {
+        super();
+        this.verify = new CrcVerify(crc, size);
+        baseStm.on("error", (e) => {
+          this.emit("error", e);
+        });
+      }
+      _transform(data, encoding, callback) {
+        let err;
+        try {
+          this.verify.data(data);
+        } catch (e) {
+          err = e;
+        }
+        callback(err, data);
+      }
+    };
+    var CrcVerify = class _CrcVerify {
+      constructor(crc, size) {
+        this.crc = crc;
+        this.size = size;
+        this.state = {
+          crc: ~0,
+          size: 0
+        };
+      }
+      data(data) {
+        const crcTable = _CrcVerify.getCrcTable();
+        let crc = this.state.crc;
+        let off = 0;
+        let len = data.length;
+        while (--len >= 0) {
+          crc = crcTable[(crc ^ data[off++]) & 255] ^ crc >>> 8;
+        }
+        this.state.crc = crc;
+        this.state.size += data.length;
+        if (this.state.size >= this.size) {
+          const buf = Buffer.alloc(4);
+          buf.writeInt32LE(~this.state.crc & 4294967295, 0);
+          crc = buf.readUInt32LE(0);
+          if (crc !== this.crc) {
+            throw new Error("Invalid CRC");
+          }
+          if (this.state.size !== this.size) {
+            throw new Error("Invalid size");
+          }
+        }
+      }
+      static getCrcTable() {
+        let crcTable = _CrcVerify.crcTable;
+        if (!crcTable) {
+          _CrcVerify.crcTable = crcTable = [];
+          const b = Buffer.alloc(4);
+          for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 8; --k >= 0; ) {
+              if ((c & 1) !== 0) {
+                c = 3988292384 ^ c >>> 1;
+              } else {
+                c = c >>> 1;
+              }
+            }
+            if (c < 0) {
+              b.writeInt32LE(c, 0);
+              c = b.readUInt32LE(0);
+            }
+            crcTable[n] = c;
+          }
+        }
+        return crcTable;
+      }
+    };
+    function parseZipTime(timebytes, datebytes) {
+      const timebits = toBits(timebytes, 16);
+      const datebits = toBits(datebytes, 16);
+      const mt = {
+        h: parseInt(timebits.slice(0, 5).join(""), 2),
+        m: parseInt(timebits.slice(5, 11).join(""), 2),
+        s: parseInt(timebits.slice(11, 16).join(""), 2) * 2,
+        Y: parseInt(datebits.slice(0, 7).join(""), 2) + 1980,
+        M: parseInt(datebits.slice(7, 11).join(""), 2),
+        D: parseInt(datebits.slice(11, 16).join(""), 2)
+      };
+      const dt_str = [mt.Y, mt.M, mt.D].join("-") + " " + [mt.h, mt.m, mt.s].join(":") + " GMT+0";
+      return new Date(dt_str).getTime();
+    }
+    function toBits(dec, size) {
+      let b = (dec >>> 0).toString(2);
+      while (b.length < size) {
+        b = "0" + b;
+      }
+      return b.split("");
+    }
+    function readUInt64LE(buffer, offset) {
+      return buffer.readUInt32LE(offset + 4) * 4294967296 + buffer.readUInt32LE(offset);
+    }
+    module2.exports = StreamZip;
+  }
+});
+
 // src/main/main.ts
 var import_electron2 = require("electron");
 var import_node_path10 = __toESM(require("node:path"), 1);
@@ -4132,27 +5262,37 @@ var JavaDownloadService = class {
    * Extrae el archivo ZIP de Java en la carpeta de destino
    */
   async extractJavaArchive(archivePath, extractTo) {
+    const nodeStreamZip = require_node_stream_zip();
+    if (!nodeStreamZip) {
+      throw new Error("node-stream-zip no est\xE1 disponible");
+    }
     return new Promise((resolve, reject) => {
-      const zip = new require("node-stream-zip")({
-        file: archivePath,
-        storeEntries: true
-      });
-      zip.on("ready", () => {
-        try {
-          zip.extract(null, extractTo, (err) => {
+      try {
+        const zip = new nodeStreamZip({
+          file: archivePath,
+          storeEntries: true
+        });
+        zip.on("ready", () => {
+          try {
+            zip.extract(null, extractTo, (err) => {
+              zip.close();
+              if (err) {
+                reject(err);
+              } else {
+                resolve();
+              }
+            });
+          } catch (error) {
             zip.close();
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        } catch (error) {
-          zip.close();
-          reject(error);
-        }
-      });
-      zip.on("error", reject);
+            reject(error);
+          }
+        });
+        zip.on("error", (err) => {
+          reject(err);
+        });
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 };
@@ -4411,7 +5551,11 @@ var ModrinthDownloadService = class {
    */
   async getCompatibleVersions(projectId, mcVersion, loader) {
     const allVersions = await this.getAvailableVersions(projectId);
-    return downloadQueueService2.findCompatibleVersions(allVersions, mcVersion, loader);
+    return allVersions.filter(
+      (version) => version.game_versions.includes(mcVersion) && (!loader || version.loaders.includes(loader.toLowerCase()))
+    ).sort(
+      (a, b) => new Date(b.date_published).getTime() - new Date(a.date_published).getTime()
+    );
   }
   /**
    * Descarga un mod, resource pack o shader pack simple
@@ -4548,40 +5692,72 @@ var ModrinthDownloadService = class {
    * Extrae el manifiesto de un archivo .mrpack
    */
   async extractModpackManifest(packPath) {
+    const nodeStreamZip = require_node_stream_zip();
+    if (!nodeStreamZip) {
+      throw new Error("node-stream-zip no est\xE1 disponible");
+    }
     return new Promise((resolve, reject) => {
-      const zip = new require("node-stream-zip")({
-        file: packPath,
-        storeEntries: true
-      });
-      zip.on("ready", () => {
-        try {
-          const manifestEntry = Object.keys(zip.entries()).find(
-            (entry) => entry === "modrinth.index.json" || entry.endsWith("modrinth.index.json")
-          );
-          if (!manifestEntry) {
-            reject(new Error("No se encontr\xF3 el archivo modrinth.index.json en el modpack"));
-            zip.close();
-            return;
-          }
-          zip.entryData(manifestEntry, (err, data) => {
-            zip.close();
-            if (err) {
-              reject(err);
-            } else {
-              try {
-                const manifest = JSON.parse(data.toString("utf-8"));
-                resolve(manifest);
-              } catch (parseError) {
-                reject(parseError);
-              }
+      try {
+        const zip = new nodeStreamZip({
+          file: packPath,
+          storeEntries: true
+        });
+        zip.on("ready", () => {
+          try {
+            const manifestEntry = Object.keys(zip.entries()).find(
+              (entry) => entry === "modrinth.index.json" || entry.endsWith("modrinth.index.json")
+            );
+            if (!manifestEntry) {
+              reject(new Error("No se encontr\xF3 el archivo modrinth.index.json en el modpack"));
+              zip.close();
+              return;
             }
-          });
-        } catch (error) {
-          zip.close();
-          reject(error);
-        }
-      });
-      zip.on("error", reject);
+            try {
+              const entry = zip.entry(manifestEntry);
+              if (!entry) {
+                reject(new Error("No se pudo acceder a la entrada del archivo"));
+                zip.close();
+                return;
+              }
+              const stream = zip.stream(manifestEntry, (err, stm) => {
+                if (err) {
+                  reject(err);
+                  zip.close();
+                  return;
+                }
+                const chunks = [];
+                stm.on("data", (chunk) => chunks.push(chunk));
+                stm.on("end", () => {
+                  try {
+                    const data = Buffer.concat(chunks);
+                    const manifest = JSON.parse(data.toString("utf-8"));
+                    zip.close();
+                    resolve(manifest);
+                  } catch (parseError) {
+                    zip.close();
+                    reject(parseError);
+                  }
+                });
+                stm.on("error", (streamErr) => {
+                  zip.close();
+                  reject(streamErr);
+                });
+              });
+            } catch (readError) {
+              zip.close();
+              reject(readError);
+            }
+          } catch (error) {
+            zip.close();
+            reject(error);
+          }
+        });
+        zip.on("error", (err) => {
+          reject(err);
+        });
+      } catch (error) {
+        reject(error);
+      }
     });
   }
   /**
@@ -4620,11 +5796,6 @@ var ModrinthDownloadService = class {
           await this.downloadFile(downloadUrl, targetPath);
           console.log(`Descargado ${fileName} a ${targetDir}`);
         }
-      } else if (file.resources && file.resources.length > 0) {
-        const zip = new require("node-stream-zip")({
-          file: import_node_path8.default.join(tempDir, import_node_path8.default.basename(file.path)),
-          storeEntries: true
-        });
       }
     }
   }
@@ -4652,7 +5823,7 @@ var ModrinthDownloadService = class {
     });
   }
 };
-var modrinthDownloadService2 = new ModrinthDownloadService();
+var modrinthDownloadService = new ModrinthDownloadService();
 
 // src/services/instanceCreationService.ts
 var InstanceCreationService = class {
@@ -4773,9 +5944,9 @@ var InstanceCreationService = class {
     }
     try {
       if (contentType === "modpack") {
-        await modrinthDownloadService2.downloadModpack(contentId, instancePath, mcVersion, loader);
+        await modrinthDownloadService.downloadModpack(contentId, instancePath, mcVersion, loader);
       } else {
-        await modrinthDownloadService2.downloadContent(contentId, instancePath, mcVersion, loader, contentType);
+        await modrinthDownloadService.downloadContent(contentId, instancePath, mcVersion, loader, contentType);
       }
       console.log(`Contenido ${contentType} ${contentId} instalado en ${instancePath}`);
     } catch (error) {
@@ -5141,6 +6312,16 @@ import_electron2.ipcMain.handle("modrinth:get-compatible-versions", async (_e, p
     payload.loader
   );
 });
+import_electron2.ipcMain.handle("dialog:showOpenDialog", async (_e, options) => {
+  try {
+    const { dialog } = require("electron");
+    const result = await dialog.showOpenDialog(options);
+    return result;
+  } catch (error) {
+    console.error("Error en showOpenDialog:", error);
+    return { canceled: true, filePaths: [] };
+  }
+});
 import_electron2.ipcMain.handle("java:detect", async () => {
   try {
     return await javaService_default.detectJava();
@@ -5340,4 +6521,12 @@ import_electron2.ipcMain.handle("modrinth:search", async (_event, { contentType,
 import_electron2.app.on("window-all-closed", () => {
   if (process.platform !== "darwin") import_electron2.app.quit();
 });
+/*! Bundled license information:
+
+node-stream-zip/node_stream_zip.js:
+  (**
+   * @license node-stream-zip | (c) 2020 Antelle | https://github.com/antelle/node-stream-zip/blob/master/LICENSE
+   * Portions copyright https://github.com/cthackers/adm-zip | https://raw.githubusercontent.com/cthackers/adm-zip/master/LICENSE
+   *)
+*/
 //# sourceMappingURL=main.cjs.map

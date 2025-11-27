@@ -31,6 +31,7 @@ const ContentPage: React.FC = () => {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string>('');
   const [instances, setInstances] = useState<any[]>([]);
   const [showCustomFolder, setShowCustomFolder] = useState<boolean>(false);
+  const [customFolderPath, setCustomFolderPath] = useState<string>('');
   const [content, setContent] = useState<ContentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState<{[key: string]: boolean}>({});
@@ -193,14 +194,22 @@ const ContentPage: React.FC = () => {
 
       // Obtener la ruta de la instancia seleccionada
       let instancePath = '';
-      if (selectedInstanceId !== 'custom') {
+      if (selectedInstanceId === 'custom') {
+        // Usar la ruta personalizada del estado
+        if (customFolderPath) {
+          instancePath = customFolderPath;
+        } else {
+          alert('Por favor, selecciona una carpeta personalizada.');
+          return;
+        }
+      } else {
         const selectedInstance = instances.find(instance => instance.id === selectedInstanceId);
         if (selectedInstance) {
           instancePath = selectedInstance.path;
         }
       }
 
-      if (!instancePath && selectedInstanceId !== 'custom') {
+      if (!instancePath) {
         alert('No se pudo encontrar la instancia seleccionada.');
         return;
       }
@@ -212,7 +221,7 @@ const ContentPage: React.FC = () => {
       const requiresLoader = contentType === 'mod' || contentType === 'modpack';
       // Aquí se podría usar el loader del selector si está disponible
 
-      await window.api.instance.installContent({
+      await window.api.instances.installContent({
         instancePath: instancePath, // Usar la ruta de la instancia seleccionada
         contentId: item.id,
         contentType: contentType,
@@ -221,7 +230,7 @@ const ContentPage: React.FC = () => {
         versionId: undefined // En una implementación completa, se usaría la versión específica del contenido
       });
 
-      alert(`¡Contenido instalado!\n${item.title} ha sido instalado en la instancia seleccionada.`);
+      alert(`¡Contenido instalado!\n${item.title} ha sido instalado en la ubicación seleccionada.`);
     } catch (error) {
       console.error('Error al instalar el contenido:', error);
       alert(`Error al instalar el contenido: ${error instanceof Error ? error.message : 'Error desconocido'}`);
@@ -418,124 +427,159 @@ const ContentPage: React.FC = () => {
                   {/* Selector de versión, loader e instancia/carpeta encima del botón de descarga */}
                   <div className="space-y-3">
                     {/* Selector de versión */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300">
                         Versión del contenido:
                       </label>
-                      <select
-                        value={selectedVersion || ''}
-                        onChange={(e) => setSelectedVersion(e.target.value)}
-                        className="w-full bg-gray-700 border border-gray-600 rounded-lg py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="all">Todas las versiones</option>
-                        {selectedContent?.minecraftVersions
-                          .filter(version => {
-                            // Filtrar versiones para mostrar solo las estables más usadas
-                            // - Deben ser versiones tipo "x.y.z" (por ejemplo, 1.20.1, 1.19.2, etc.)
-                            // - Excluir versiones de desarrollo como 18w49a, 19w02a, etc.
-                            // - Excluir versiones pre-releases como 1.15-pre1, etc.
-                            // - Excluir versiones especiales como 20w14infinite
-                            const isStableVersion = /^1\.\d{1,2}(\.\d{1,2})?$/.test(version); // Solo versiones estables tipo 1.x.x
-                            const isNotPreRelease = !version.includes('pre');
-                            const isNotReleaseCandidate = !version.includes('rc');
-                            const isNotSnapshot = !version.includes('snapshot');
-                            const isNotWeekVersion = !version.includes('w'); // Excluir versiones de desarrollo tipo 18w49a
-                            const isNotSpecial = !version.includes('infinite'); // Excluir versiones especiales
-                            const isNotHyphenated = !version.includes('-'); // Excluir otras versiones especiales
+                      <div className="relative">
+                        <select
+                          value={selectedVersion || ''}
+                          onChange={(e) => setSelectedVersion(e.target.value)}
+                          className="w-full bg-gray-700/80 backdrop-blur-sm border border-gray-600 rounded-xl py-3 px-4 pr-10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-200 appearance-none"
+                        >
+                          <option value="all">Todas las versiones</option>
+                          {selectedContent?.minecraftVersions
+                            .filter(version => {
+                              // Filtrar versiones para mostrar solo las estables más usadas
+                              // - Deben ser versiones tipo "x.y.z" (por ejemplo, 1.20.1, 1.19.2, etc.)
+                              // - Excluir versiones de desarrollo como 18w49a, 19w02a, etc.
+                              // - Excluir versiones pre-releases como 1.15-pre1, etc.
+                              // - Excluir versiones especiales como 20w14infinite
+                              const isStableVersion = /^1\.\d{1,2}(\.\d{1,2})?$/.test(version); // Solo versiones estables tipo 1.x.x
+                              const isNotPreRelease = !version.includes('pre');
+                              const isNotReleaseCandidate = !version.includes('rc');
+                              const isNotSnapshot = !version.includes('snapshot');
+                              const isNotWeekVersion = !version.includes('w'); // Excluir versiones de desarrollo tipo 18w49a
+                              const isNotSpecial = !version.includes('infinite'); // Excluir versiones especiales
+                              const isNotHyphenated = !version.includes('-'); // Excluir otras versiones especiales
 
-                            return isStableVersion && isNotPreRelease && isNotReleaseCandidate &&
-                                   isNotSnapshot && isNotWeekVersion && isNotSpecial && isNotHyphenated;
-                          })
-                          .sort((a, b) => {
-                            // Ordenar versiones de la más reciente a la más antigua
-                            const [aMajor, aMinor, aPatch] = a.split('.').map(Number);
-                            const [bMajor, bMinor, bPatch] = b.split('.').map(Number);
+                              return isStableVersion && isNotPreRelease && isNotReleaseCandidate &&
+                                     isNotSnapshot && isNotWeekVersion && isNotSpecial && isNotHyphenated;
+                            })
+                            .sort((a, b) => {
+                              // Ordenar versiones de la más reciente a la más antigua
+                              const [aMajor, aMinor, aPatch] = a.split('.').map(Number);
+                              const [bMajor, bMinor, bPatch] = b.split('.').map(Number);
 
-                            if (aMajor !== bMajor) return bMajor - aMajor;
-                            if (aMinor !== bMinor) return bMinor - aMinor;
-                            return (bPatch || 0) - (aPatch || 0);
-                          })
-                          .map(version => (
-                            <option key={version} value={version}>
-                              {version}
-                            </option>
-                          ))}
-                      </select>
+                              if (aMajor !== bMajor) return bMajor - aMajor;
+                              if (aMinor !== bMinor) return bMinor - aMinor;
+                              return (bPatch || 0) - (aPatch || 0);
+                            })
+                            .map(version => (
+                              <option key={version} value={version}>
+                                {version}
+                              </option>
+                            ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-300">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Selector de loader (solo para mods) */}
-                    {selectedContent?.type === 'modpacks' || selectedContent?.type === 'mods' ? (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                    {(selectedContent?.type === 'modpacks' || selectedContent?.type === 'mods') ? (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-300">
                           Loader compatible:
                         </label>
-                        <select
-                          value={selectedContent?.categories?.[0] || ''}
-                          className="w-full bg-gray-700 border border-gray-600 rounded-lg py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                        >
-                          <option value="">Loader por defecto</option>
-                          <option value="forge">Forge</option>
-                          <option value="fabric">Fabric</option>
-                          <option value="quilt">Quilt</option>
-                          <option value="neoforge">NeoForge</option>
-                        </select>
+                        <div className="relative">
+                          <select
+                            value={selectedContent?.categories?.[0] || ''}
+                            onChange={() => {}} // Placeholder para evitar el warning, se puede implementar funcionalidad real si es necesario
+                            className="w-full bg-gray-700/80 backdrop-blur-sm border border-gray-600 rounded-xl py-3 px-4 pr-10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-200 appearance-none"
+                          >
+                            <option value="">Loader por defecto</option>
+                            <option value="forge">Forge</option>
+                            <option value="fabric">Fabric</option>
+                            <option value="quilt">Quilt</option>
+                            <option value="neoforge">NeoForge</option>
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-300">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
                       </div>
                     ) : null}
 
                     {/* Selector de instancia o carpeta personalizada */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300">
                         Instancia de destino:
                       </label>
-                      <select
-                        value={selectedInstanceId}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setSelectedInstanceId(value);
-                          setShowCustomFolder(value === 'custom');
-                        }}
-                        className="w-full bg-gray-700 border border-gray-600 rounded-lg py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="">Seleccionar instancia...</option>
-                        {instances.map(instance => (
-                          <option key={instance.id} value={instance.id}>
-                            {instance.name} ({instance.version}) {instance.loader && ` - ${instance.loader}`}
-                          </option>
-                        ))}
-                        <option value="custom"> Carpeta personalizada...</option>
-                      </select>
+                      <div className="relative">
+                        <select
+                          value={selectedInstanceId}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setSelectedInstanceId(value);
+                            setShowCustomFolder(value === 'custom');
+                          }}
+                          className="w-full bg-gray-700/80 backdrop-blur-sm border border-gray-600 rounded-xl py-3 px-4 pr-10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-200 appearance-none"
+                        >
+                          <option value="">Seleccionar instancia...</option>
+                          {instances.map(instance => (
+                            <option key={instance.id} value={instance.id}>
+                              {instance.name} ({instance.version}) {instance.loader && ` - ${instance.loader}`}
+                            </option>
+                          ))}
+                          <option value="custom"> Carpeta personalizada...</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-300">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Opción para carpeta personalizada */}
                     {showCustomFolder && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-300">
                           Ruta personalizada:
                         </label>
-                        <div className="flex">
+                        <div className="flex gap-2">
                           <input
                             type="text"
+                            value={customFolderPath}
+                            onChange={(e) => setCustomFolderPath(e.target.value)}
                             placeholder="Selecciona una carpeta..."
-                            className="flex-1 bg-gray-700 border border-gray-600 rounded-l-lg py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                            className="flex-1 bg-gray-700/80 backdrop-blur-sm border border-gray-600 rounded-xl py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-200"
                           />
                           <button
-                            className="bg-gray-600 hover:bg-gray-500 text-white py-2 px-4 rounded-r-lg"
+                            className="bg-gradient-to-r from-blue-600 to-primary hover:from-blue-700 hover:to-primary/90 text-white py-3 px-6 rounded-xl font-medium transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary/50"
                             onClick={async () => {
                               // Lógica para seleccionar carpeta personalizada
                               try {
-                                const result = await window.api.system.showOpenDialog({
-                                  properties: ['openDirectory']
-                                });
-                                if (!result.canceled && result.filePaths.length > 0) {
-                                  // Aquí se podría actualizar un estado con la ruta seleccionada
-                                  // o pasarla directamente a la función de descarga
+                                // Verificar si existe la API de diálogo
+                                if (window.api?.dialog?.showOpenDialog) {
+                                  const result = await window.api.dialog.showOpenDialog({
+                                    properties: ['openDirectory'],
+                                    title: 'Seleccionar carpeta de destino',
+                                    buttonLabel: 'Seleccionar'
+                                  });
+                                  if (!result.canceled && result.filePaths.length > 0) {
+                                    // Actualizar el estado con la ruta seleccionada
+                                    setCustomFolderPath(result.filePaths[0]);
+                                  } else {
+                                    console.log('Selección de carpeta cancelada o sin resultados');
+                                  }
+                                } else {
+                                  // Si no está disponible, mostrar mensaje de error más descriptivo
+                                  alert('La función de selección de carpetas no está disponible. Puede que necesites reconstruir la aplicación o verificar la instalación.');
                                 }
                               } catch (error) {
                                 console.error('Error al seleccionar carpeta:', error);
+                                alert('Error al seleccionar la carpeta: ' + (error as Error).message);
                               }
                             }}
                           >
-                            ...
+                            Explorar
                           </button>
                         </div>
                       </div>
