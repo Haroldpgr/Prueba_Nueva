@@ -6,6 +6,7 @@ export interface Profile {
   username: string;
   type: 'microsoft' | 'non-premium';
   lastUsed: number;
+  skinUrl?: string; // URL de la skin personalizada
 }
 
 const STORAGE_KEY = 'launcher_profiles';
@@ -98,5 +99,21 @@ export const profileService = {
         }
       }, 1000);
     });
+  },
+
+  setSkinForProfile(username: string, skinUrl: string): boolean {
+    const profiles = getProfiles();
+    const profileIndex = profiles.findIndex(p => p.username === username);
+    if (profileIndex !== -1) {
+      profiles[profileIndex].skinUrl = skinUrl;
+      saveProfiles(profiles);
+      return true;
+    }
+    return false;
+  },
+
+  getSkinForProfile(username: string): string | undefined {
+    const profile = this.getProfileByUsername(username);
+    return profile?.skinUrl;
   },
 };
