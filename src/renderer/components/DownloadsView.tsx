@@ -163,13 +163,13 @@ const DownloadsView = () => {
                       Inicio: {new Date(download.startTime).toLocaleTimeString()}
                     </div>
                     <div className="flex gap-2">
-                      <button 
+                      <button
                         className="hover:text-blue-400 transition-colors"
                         title="Abrir carpeta"
                       >
                         📁
                       </button>
-                      <button 
+                      <button
                         className="hover:text-red-400 transition-colors"
                         title="Cancelar"
                       >

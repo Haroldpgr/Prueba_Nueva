@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { downloadService } from '../services/downloadService';
 
 type ContentType = 'modpacks' | 'mods' | 'resourcepacks' | 'datapacks' | 'shaders';
 type SortBy = 'popular' | 'recent' | 'name';
@@ -29,6 +30,10 @@ const ContentPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortBy, setSortBy] = useState<SortBy>('popular');
   const [selectedInstanceId, setSelectedInstanceId] = useState<string>('');
+  const [selectedLoader, setSelectedLoader] = useState<string>(''); // Nuevo estado para el loader
+  const [compatibleLoaders, setCompatibleLoaders] = useState<string[]>([]); // Loaders compatibles
+  const [compatibleVersions, setCompatibleVersions] = useState<string[]>([]); // Versiones compatibles
+  const [installationProgress, setInstallationProgress] = useState<number>(0); // Progreso de instalación
   const [instances, setInstances] = useState<any[]>([]);
   const [showCustomFolder, setShowCustomFolder] = useState<boolean>(false);
   const [customFolderPath, setCustomFolderPath] = useState<string>('');
@@ -37,6 +42,7 @@ const ContentPage: React.FC = () => {
   const [isDownloading, setIsDownloading] = useState<{[key: string]: boolean}>({});
   const [downloadProgress, setDownloadProgress] = useState<{[key: string]: number}>({});
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
+  const [installedContent, setInstalledContent] = useState<Set<string>>(new Set()); // Contenido ya instalado
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20; // Mostrar 20 elementos por página
 
@@ -145,15 +151,161 @@ const ContentPage: React.FC = () => {
     }
   };
 
-  // Set selected content when ID changes
+  // Set selected content when ID changes and check installation status
   useEffect(() => {
     if (id) {
       const item = content.find(item => item.id === id);
       setSelectedContent(item || null);
+
+      // Si se ha encontrado el contenido, cargar versiones y loaders compatibles
+      if (item) {
+        loadCompatibleVersionsAndLoaders(item);
+      }
     } else {
       setSelectedContent(null);
+      setCompatibleVersions([]);
+      setCompatibleLoaders([]);
     }
   }, [id, content]);
+
+  // Función para cargar versiones y loaders compatibles desde Modrinth
+  const loadCompatibleVersionsAndLoaders = async (item: ContentItem) => {
+    try {
+      // Verificar si el método está disponible antes de usarlo
+      if (window.api.modrinth.getCompatibleVersions) {
+        // Obtener versiones compatibles desde Modrinth API
+        // Usamos la primera versión compatible como referencia si no hay versión seleccionada
+        const mcVersionForFilter = selectedVersion && selectedVersion !== 'all' ? selectedVersion : item.minecraftVersions[0] || '1.20.1';
+
+        const compatibleVersions = await window.api.modrinth.getCompatibleVersions({
+          projectId: item.id,
+          mcVersion: mcVersionForFilter,
+          loader: selectedLoader || undefined
+        });
+
+      // Extraer todas las versiones únicas de Minecraft de las versiones compatibles
+      const allGameVersions = new Set<string>();
+      compatibleVersions.forEach((version: any) => {
+        version.game_versions.forEach((v: string) => allGameVersions.add(v));
+      });
+
+      // Filtrar y ordenar versiones como antes (descendente: la más nueva primero)
+      const filteredVersions = Array.from(allGameVersions)
+        .filter(version => {
+          const isStableVersion = /^1\.\d{1,2}(\.\d{1,2})?$/.test(version);
+          const isNotPreRelease = !version.includes('pre');
+          const isNotReleaseCandidate = !version.includes('rc');
+          const isNotSnapshot = !version.includes('snapshot');
+          const isNotWeekVersion = !version.includes('w');
+          const isNotSpecial = !version.includes('infinite');
+          const isNotHyphenated = !version.includes('-');
+
+          return isStableVersion && isNotPreRelease && isNotReleaseCandidate &&
+                 isNotSnapshot && isNotWeekVersion && isNotSpecial && isNotHyphenated;
+        })
+        .sort((a, b) => {
+          const [aMajor, aMinor, aPatch] = a.split('.').map(Number);
+          const [bMajor, bMinor, bPatch] = b.split('.').map(Number);
+
+          if (aMajor !== bMajor) return bMajor - aMajor;  // Mayor número de versión mayor primero
+          if (aMinor !== bMinor) return bMinor - aMinor;  // Mayor número de versión menor primero
+          return (bPatch || 0) - (aPatch || 0);          // Mayor número de parche primero
+        });
+
+      setCompatibleVersions(filteredVersions);
+
+      // Extraer loaders compatibles
+      const allLoaders = new Set<string>();
+      compatibleVersions.forEach((version: any) => {
+        version.loaders.forEach((l: string) => allLoaders.add(l));
+      });
+
+      const compatibleLoadersList = Array.from(allLoaders);
+      setCompatibleLoaders(compatibleLoadersList);
+    } else {
+      // Fallback: usar las versiones originales del contenido del item
+      const filteredVersions = item.minecraftVersions
+        .filter(version => {
+          const isStableVersion = /^1\.\d{1,2}(\.\d{1,2})?$/.test(version);
+          const isNotPreRelease = !version.includes('pre');
+          const isNotReleaseCandidate = !version.includes('rc');
+          const isNotSnapshot = !version.includes('snapshot');
+          const isNotWeekVersion = !version.includes('w');
+          const isNotSpecial = !version.includes('infinite');
+          const isNotHyphenated = !version.includes('-');
+
+          return isStableVersion && isNotPreRelease && isNotReleaseCandidate &&
+                 isNotSnapshot && isNotWeekVersion && isNotSpecial && isNotHyphenated;
+        })
+        .sort((a, b) => {
+          const [aMajor, aMinor, aPatch] = a.split('.').map(Number);
+          const [bMajor, bMinor, bPatch] = b.split('.').map(Number);
+
+          if (aMajor !== bMajor) return bMajor - aMajor;  // Mayor número de versión mayor primero
+          if (aMinor !== bMinor) return bMinor - aMinor;  // Mayor número de versión menor primero
+          return (bPatch || 0) - (aPatch || 0);          // Mayor número de parche primero
+        });
+
+      setCompatibleVersions(filteredVersions);
+
+      // Para los loaders, usar una lógica basada en el tipo de contenido
+      let possibleLoaders: string[] = [];
+      if (item.type === 'modpacks' || item.type === 'mods') {
+        // Para mods y modpacks, los loaders comunes son forge, fabric, etc.
+        possibleLoaders = ['forge', 'fabric', 'quilt', 'neoforge'];
+      }
+      // Para otros tipos no se requieren loaders específicos
+      setCompatibleLoaders(possibleLoaders);
+    }
+    } catch (error) {
+      console.error('Error al cargar versiones y loaders compatibles:', error);
+      // En caso de error, usar las versiones originales del contenido
+      const filteredVersions = item.minecraftVersions
+        .filter(version => {
+          const isStableVersion = /^1\.\d{1,2}(\.\d{1,2})?$/.test(version);
+          const isNotPreRelease = !version.includes('pre');
+          const isNotReleaseCandidate = !version.includes('rc');
+          const isNotSnapshot = !version.includes('snapshot');
+          const isNotWeekVersion = !version.includes('w');
+          const isNotSpecial = !version.includes('infinite');
+          const isNotHyphenated = !version.includes('-');
+
+          return isStableVersion && isNotPreRelease && isNotReleaseCandidate &&
+                 isNotSnapshot && isNotWeekVersion && isNotSpecial && isNotHyphenated;
+        })
+        .sort((a, b) => {
+          const [aMajor, aMinor, aPatch] = a.split('.').map(Number);
+          const [bMajor, bMinor, bPatch] = b.split('.').map(Number);
+
+          if (aMajor !== bMajor) return bMajor - aMajor;  // Mayor número de versión mayor primero
+          if (aMinor !== bMinor) return bMinor - aMinor;  // Mayor número de versión menor primero
+          return (bPatch || 0) - (aPatch || 0);          // Mayor número de parche primero
+        });
+
+      setCompatibleVersions(filteredVersions);
+
+      // Para los loaders, usar una lógica basada en el tipo de contenido
+      let possibleLoaders: string[] = [];
+      if (item.type === 'modpacks' || item.type === 'mods') {
+        // Para mods y modpacks, los loaders comunes son forge, fabric, etc.
+        possibleLoaders = ['forge', 'fabric', 'quilt', 'neoforge'];
+      }
+      // Para otros tipos no se requieren loaders específicos
+      setCompatibleLoaders(possibleLoaders);
+    }
+  };
+
+  // Check installation status when selectedInstanceId or selectedContent changes
+  useEffect(() => {
+    if (selectedInstanceId && selectedContent) {
+      if (installedContent.has(`${selectedInstanceId}-${selectedContent.id}`)) {
+        // Estado ya está registrado como instalado
+      } else {
+        // Aquí se podría verificar si está instalado realmente en la instancia
+        // Por ahora solo lo dejamos como no instalado hasta que se complete la instalación
+      }
+    }
+  }, [selectedInstanceId, selectedContent, installedContent]);
 
   const handleContentClick = (item: ContentItem) => {
     navigate(`/contenido/${type}/${item.id}`);
@@ -164,12 +316,8 @@ const ContentPage: React.FC = () => {
   };
 
   const handleDownload = async (item: ContentItem) => {
-    if (!selectedInstanceId) {
-      alert('Por favor, selecciona una instancia de destino.');
-      return;
-    }
-
     setIsDownloading(prev => ({ ...prev, [item.id]: true }));
+    setInstallationProgress(0); // Resetear progreso de instalación
 
     try {
       // Determinar el tipo de contenido correcto
@@ -192,50 +340,142 @@ const ContentPage: React.FC = () => {
           contentType = 'mod';
       }
 
-      // Obtener la ruta de la instancia seleccionada
-      let instancePath = '';
-      if (selectedInstanceId === 'custom') {
-        // Usar la ruta personalizada del estado
-        if (customFolderPath) {
-          instancePath = customFolderPath;
-        } else {
-          alert('Por favor, selecciona una carpeta personalizada.');
+      if (!selectedInstanceId) {
+        // Si no se seleccionó instancia, preguntar al usuario qué quiere hacer
+        const userChoice = confirm(`No has seleccionado una instancia.\n¿Quieres descargar "${item.title}" directamente a la zona de descargas?\n\nCancela para seleccionar una instancia en su lugar.`);
+
+        if (!userChoice) {
+          alert('Por favor, selecciona una instancia para instalar el contenido.');
           return;
         }
+
+        // Obtener información de la versión compatible para descargar
+        const compatibleVersions = await window.api.modrinth.getCompatibleVersions({
+          projectId: item.id,
+          mcVersion: selectedVersion !== 'all' ? selectedVersion : item.minecraftVersions[0] || '1.20.1'
+        });
+
+        if (compatibleVersions.length === 0) {
+          alert('No se encontraron versiones compatibles para descargar');
+          return;
+        }
+
+        // Tomar la primera versión compatible
+        const targetVersion = compatibleVersions[0];
+        const primaryFile = targetVersion.files.find((f: any) => f.primary) || targetVersion.files[0];
+
+        if (!primaryFile) {
+          alert('No se encontraron archivos para descargar');
+          return;
+        }
+
+        // Registrar en el sistema de descargas - el servicio crea su propio ID y lo usa
+        downloadService.downloadFile(
+          primaryFile.url,
+          primaryFile.filename,
+          item.title
+        );
+
+        alert(`¡Contenido iniciado para descarga!\n${item.title} se está descargando en la zona de descargas.`);
       } else {
-        const selectedInstance = instances.find(instance => instance.id === selectedInstanceId);
-        if (selectedInstance) {
-          instancePath = selectedInstance.path;
+        // Validación de campos obligatorios para instancias
+        if (selectedInstanceId && selectedInstanceId !== 'custom') {
+          // Verificar si ya está instalado
+          if (selectedContent && installedContent.has(`${selectedInstanceId}-${selectedContent.id}`)) {
+            alert(`El contenido "${item.title}" ya está instalado en la instancia seleccionada.`);
+            return;
+          }
+
+          // Validar que se haya seleccionado una versión
+          if (!selectedVersion || selectedVersion === 'all') {
+            alert('Por favor, selecciona una versión de Minecraft.');
+            return;
+          }
+
+          // Validar que se haya seleccionado un loader si es necesario
+          if ((contentType === 'mod' || contentType === 'modpack') && !selectedLoader) {
+            alert('Por favor, selecciona un loader compatible.');
+            return;
+          }
+        }
+
+        // Instalar en la instancia como antes
+        // Obtener la ruta de la instancia seleccionada
+        let instancePath = '';
+        if (selectedInstanceId === 'custom') {
+          // Usar la ruta personalizada del estado
+          if (customFolderPath) {
+            instancePath = customFolderPath;
+          } else {
+            alert('Por favor, selecciona una carpeta personalizada.');
+            return;
+          }
+        } else {
+          const selectedInstance = instances.find(instance => instance.id === selectedInstanceId);
+          if (selectedInstance) {
+            instancePath = selectedInstance.path;
+          }
+        }
+
+        if (!instancePath) {
+          alert('No se pudo encontrar la instancia seleccionada.');
+          return;
+        }
+
+        // Usar el nuevo sistema de instalación con versión y loader
+        const mcVersion = selectedVersion && selectedVersion !== 'all' && selectedVersion !== '' ? selectedVersion : item.minecraftVersions[0] || '1.20.1';
+
+        // Determinar si es un mod que requiere loader
+        const requiresLoader = contentType === 'mod' || contentType === 'modpack';
+        // Usar el loader seleccionado
+        const loaderToUse = requiresLoader && selectedLoader ? selectedLoader : undefined;
+
+        // Iniciar simulación de progreso de instalación
+        const progressInterval = setInterval(() => {
+          setInstallationProgress(prev => {
+            if (prev >= 95) {
+              clearInterval(progressInterval);
+              return 95; // No llegar al 100% hasta que realmente termine
+            }
+            return prev + 1;
+          });
+        }, 200); // Actualizar cada 200ms
+
+        try {
+          await window.api.instances.installContent({
+            instancePath: instancePath, // Usar la ruta de la instancia seleccionada
+            contentId: item.id,
+            contentType: contentType,
+            mcVersion,
+            loader: loaderToUse,
+            versionId: undefined // En una implementación completa, se usaría la versión específica del contenido
+          });
+
+          // Marcar como instalado en la instancia solo si es una instancia real, no carpeta personalizada
+          if (selectedInstanceId !== 'custom') {
+            setInstalledContent(prev => new Set(prev).add(`${selectedInstanceId}-${item.id}`));
+          }
+
+          // Completar el progreso
+          setInstallationProgress(100);
+          clearInterval(progressInterval);
+
+          // Pequeña pausa para que se vea el 100%
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+          alert(`¡Contenido instalado!\n${item.title} ha sido instalado en la ubicación seleccionada.`);
+        } catch (error) {
+          clearInterval(progressInterval);
+          setInstallationProgress(0);
+          throw error; // Re-lanzar para que sea capturado por el catch general
         }
       }
-
-      if (!instancePath) {
-        alert('No se pudo encontrar la instancia seleccionada.');
-        return;
-      }
-
-      // Usar el nuevo sistema de instalación con versión y loader
-      const mcVersion = selectedVersion !== 'all' ? selectedVersion : item.minecraftVersions[0] || '1.20.1';
-
-      // Determinar si es un mod que requiere loader
-      const requiresLoader = contentType === 'mod' || contentType === 'modpack';
-      // Aquí se podría usar el loader del selector si está disponible
-
-      await window.api.instances.installContent({
-        instancePath: instancePath, // Usar la ruta de la instancia seleccionada
-        contentId: item.id,
-        contentType: contentType,
-        mcVersion,
-        loader: requiresLoader ? undefined : undefined, // Se puede implementar selector de loader real
-        versionId: undefined // En una implementación completa, se usaría la versión específica del contenido
-      });
-
-      alert(`¡Contenido instalado!\n${item.title} ha sido instalado en la ubicación seleccionada.`);
     } catch (error) {
-      console.error('Error al instalar el contenido:', error);
-      alert(`Error al instalar el contenido: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+      console.error('Error al manejar el contenido:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`);
     } finally {
       setIsDownloading(prev => ({ ...prev, [item.id]: false }));
+      setInstallationProgress(0); // Resetear progreso de instalación
     }
   };
 
@@ -262,6 +502,54 @@ const ContentPage: React.FC = () => {
       background: rgba(255, 255, 255, 0.3);
     }
   `;
+
+  // Efecto para escuchar eventos de descarga
+  useEffect(() => {
+    const handleDownloadProgress = (event: any, data: { itemId: string; progress: number }) => {
+      setDownloadProgress(prev => ({
+        ...prev,
+        [data.itemId]: Math.round(data.progress * 100)
+      }));
+    };
+
+    const handleDownloadComplete = (event: any, data: { itemId: string; filePath: string }) => {
+      setIsDownloading(prev => ({
+        ...prev,
+        [data.itemId]: false
+      }));
+      setDownloadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[data.itemId];
+        return newProgress;
+      });
+      // Si la descarga era para instalar en una instancia, marcar como instalado
+      if (selectedInstanceId) {
+        setInstalledContent(prev => new Set(prev).add(`${selectedInstanceId}-${data.itemId}`));
+      }
+    };
+
+    const handleDownloadError = (event: any, error: { itemId: string; message: string }) => {
+      setIsDownloading(prev => ({
+        ...prev,
+        [error.itemId]: false
+      }));
+      setDownloadProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[error.itemId];
+        return newProgress;
+      });
+    };
+
+    // Registrar listeners
+    window.api.download.onProgress(handleDownloadProgress);
+    window.api.download.onComplete(handleDownloadComplete);
+    window.api.download.onError(handleDownloadError);
+
+    // Cleanup
+    return () => {
+      // No hay función de unsubscribe para estos listeners
+    };
+  }, []);
 
   if (isLoading) {
     return (
@@ -437,39 +725,12 @@ const ContentPage: React.FC = () => {
                           onChange={(e) => setSelectedVersion(e.target.value)}
                           className="w-full bg-gray-700/80 backdrop-blur-sm border border-gray-600 rounded-xl py-3 px-4 pr-10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-200 appearance-none"
                         >
-                          <option value="all">Todas las versiones</option>
-                          {selectedContent?.minecraftVersions
-                            .filter(version => {
-                              // Filtrar versiones para mostrar solo las estables más usadas
-                              // - Deben ser versiones tipo "x.y.z" (por ejemplo, 1.20.1, 1.19.2, etc.)
-                              // - Excluir versiones de desarrollo como 18w49a, 19w02a, etc.
-                              // - Excluir versiones pre-releases como 1.15-pre1, etc.
-                              // - Excluir versiones especiales como 20w14infinite
-                              const isStableVersion = /^1\.\d{1,2}(\.\d{1,2})?$/.test(version); // Solo versiones estables tipo 1.x.x
-                              const isNotPreRelease = !version.includes('pre');
-                              const isNotReleaseCandidate = !version.includes('rc');
-                              const isNotSnapshot = !version.includes('snapshot');
-                              const isNotWeekVersion = !version.includes('w'); // Excluir versiones de desarrollo tipo 18w49a
-                              const isNotSpecial = !version.includes('infinite'); // Excluir versiones especiales
-                              const isNotHyphenated = !version.includes('-'); // Excluir otras versiones especiales
-
-                              return isStableVersion && isNotPreRelease && isNotReleaseCandidate &&
-                                     isNotSnapshot && isNotWeekVersion && isNotSpecial && isNotHyphenated;
-                            })
-                            .sort((a, b) => {
-                              // Ordenar versiones de la más reciente a la más antigua
-                              const [aMajor, aMinor, aPatch] = a.split('.').map(Number);
-                              const [bMajor, bMinor, bPatch] = b.split('.').map(Number);
-
-                              if (aMajor !== bMajor) return bMajor - aMajor;
-                              if (aMinor !== bMinor) return bMinor - aMinor;
-                              return (bPatch || 0) - (aPatch || 0);
-                            })
-                            .map(version => (
-                              <option key={version} value={version}>
-                                {version}
-                              </option>
-                            ))}
+                          <option value="">Selecciona una versión...</option>
+                          {compatibleVersions.map(version => (
+                            <option key={version} value={version}>
+                              {version}
+                            </option>
+                          ))}
                         </select>
                         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-300">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -487,15 +748,15 @@ const ContentPage: React.FC = () => {
                         </label>
                         <div className="relative">
                           <select
-                            value={selectedContent?.categories?.[0] || ''}
-                            onChange={() => {}} // Placeholder para evitar el warning, se puede implementar funcionalidad real si es necesario
+                            value={selectedLoader}
+                            onChange={(e) => setSelectedLoader(e.target.value)}
                             className="w-full bg-gray-700/80 backdrop-blur-sm border border-gray-600 rounded-xl py-3 px-4 pr-10 text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-200 appearance-none"
                           >
-                            <option value="">Loader por defecto</option>
-                            <option value="forge">Forge</option>
-                            <option value="fabric">Fabric</option>
-                            <option value="quilt">Quilt</option>
-                            <option value="neoforge">NeoForge</option>
+                            <option value="">Selecciona un loader...</option>
+                            {compatibleLoaders.includes('forge') && <option value="forge">Forge</option>}
+                            {compatibleLoaders.includes('fabric') && <option value="fabric">Fabric</option>}
+                            {compatibleLoaders.includes('quilt') && <option value="quilt">Quilt</option>}
+                            {compatibleLoaders.includes('neoforge') && <option value="neoforge">NeoForge</option>}
                           </select>
                           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-300">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -589,28 +850,56 @@ const ContentPage: React.FC = () => {
                   <button
                     onClick={() => handleDownload(selectedContent)}
                     disabled={isDownloading[selectedContent.id]}
-                    className={`w-full ${
-                      isDownloading[selectedContent.id]
-                        ? 'bg-blue-700 cursor-wait'
-                        : 'bg-blue-600 hover:bg-blue-500'
-                    } text-white py-2 px-4 rounded-lg font-medium transition-colors relative overflow-hidden`}
+                    className="w-full relative overflow-hidden rounded-lg transition-all duration-300"
                   >
-                    {isDownloading[selectedContent.id] ? (
-                      <div className="flex items-center justify-center">
-                        <span className="mr-2">
-                          Descargando... {downloadProgress[selectedContent.id] || 0}%
-                        </span>
-                        <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
-                      </div>
-                    ) : (
-                      'Descargar'
-                    )}
-                    {isDownloading[selectedContent.id] && (
-                      <div
-                        className="absolute bottom-0 left-0 h-1 bg-blue-400 transition-all duration-200"
-                        style={{ width: `${downloadProgress[selectedContent.id] || 0}%` }}
-                      ></div>
-                    )}
+                    {/* Barra de progreso visual */}
+                    <div
+                      className={`absolute bottom-0 left-0 top-0 bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-300 ease-out ${
+                        isDownloading[selectedContent.id] ? 'opacity-100' : 'opacity-0'
+                      }`}
+                      style={{
+                        width: `${downloadProgress[selectedContent.id] || 0}%`,
+                        zIndex: 10,
+                        opacity: isDownloading[selectedContent.id] ? 0.8 : 0
+                      }}
+                    ></div>
+
+                    {/* Capa de fondo del botón */}
+                    <div
+                      className={`absolute inset-0 rounded-lg transition-all duration-300 ${
+                        isDownloading[selectedContent.id]
+                          ? 'bg-gray-800/80 backdrop-blur-sm'
+                          : (selectedInstanceId && instances.some(instance =>
+                              instance.id === selectedInstanceId &&
+                              // Comprueba si el contenido ya está instalado en la instancia (verificación simplificada)
+                              // En una implementación completa, esto se verificaría leyendo los archivos de la instancia
+                              false
+                            ))
+                            ? 'bg-gradient-to-r from-green-600 to-green-700' // Verde si ya está instalado
+                            : selectedInstanceId
+                              ? 'bg-gradient-to-r from-blue-600 to-blue-700'
+                              : 'bg-gradient-to-r from-blue-600 to-primary'
+                      }`}
+                      style={{ zIndex: 1 }}
+                    ></div>
+
+                    {/* Contenido del botón */}
+                    <div
+                      className="relative z-20 py-2 px-4 font-medium text-white flex items-center justify-center"
+                    >
+                      {isDownloading[selectedContent.id] ? (
+                        <div className="flex items-center justify-center">
+                          <span className="mr-2">
+                            {selectedInstanceId ? `Instalando... ${installationProgress}%` : `Descargando... ${downloadProgress[selectedContent.id] || 0}%`}
+                          </span>
+                          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                        </div>
+                      ) : (
+                        selectedInstanceId && selectedInstanceId !== 'custom' && selectedContent && installedContent.has(`${selectedInstanceId}-${selectedContent.id}`) ?
+                        'Ya instalado en instancia' :
+                        (selectedInstanceId ? (selectedInstanceId === 'custom' ? 'Instalar en Carpeta' : 'Instalar en Instancia') : 'Descargar')
+                      )}
+                    </div>
                   </button>
                 </div>
               </div>

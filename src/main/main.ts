@@ -467,6 +467,7 @@ ipcMain.handle('dialog:showOpenDialog', async (_e, options: any) => {
   }
 });
 
+
 // --- IPC Handlers for Java --- //
 ipcMain.handle('java:detect', async () => {
   try {

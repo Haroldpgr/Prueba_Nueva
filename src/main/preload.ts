@@ -7,7 +7,9 @@ contextBridge.exposeInMainWorld('api', {
     search: (options: { contentType: string; search: string }) => {
       console.log('Buscando en Modrinth:', options);
       return ipcRenderer.invoke('modrinth:search', options);
-    }
+    },
+    getCompatibleVersions: (payload: { projectId: string, mcVersion: string, loader?: string }) =>
+      ipcRenderer.invoke('modrinth:get-compatible-versions', payload)
   },
 
   // Métodos de descarga
@@ -70,6 +72,7 @@ declare global {
     api: {
       modrinth: {
         search: (options: { contentType: string; search: string }) => Promise<any[]>;
+        getCompatibleVersions: (payload: { projectId: string, mcVersion: string, loader?: string }) => Promise<any[]>;
       };
       download: {
         start: (data: { url: string; filename: string; itemId: string }) => void;
