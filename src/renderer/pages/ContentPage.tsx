@@ -47,6 +47,7 @@ const ContentPage: React.FC = () => {
   const location = useLocation();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [tempSearchQuery, setTempSearchQuery] = useState('');
   const [selectedVersion, setSelectedVersion] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortBy, setSortBy] = useState<SortBy>('popular');
@@ -2054,8 +2055,13 @@ const ContentPage: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Buscar contenido..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  value={tempSearchQuery}
+                  onChange={(e) => setTempSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setSearchQuery(tempSearchQuery);
+                    }
+                  }}
                   className="block w-full pl-10 pr-3 py-2.5 bg-gray-700/50 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                 />
               </div>
@@ -2248,9 +2254,10 @@ const ContentPage: React.FC = () => {
                 </svg>
                 <h3 className="mt-2 text-lg font-medium text-white">No se encontraron resultados</h3>
                 <p className="mt-1 text-gray-400">Intenta con otros filtros o términos de búsqueda.</p>
-                <button 
+                <button
                   onClick={() => {
                     setSearchQuery('');
+                    setTempSearchQuery('');
                     setSelectedVersion('all');
                     setSelectedCategory('all');
                   }}

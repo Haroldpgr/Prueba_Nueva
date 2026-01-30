@@ -36,8 +36,8 @@ export interface QuiltLaunchOptions {
 
 /**
  * Servicio para ejecutar instancias Quilt de Minecraft
- * 
- * IMPORTANTE: Quilt usa KnotClient (net.fabricmc.loader.impl.launch.knot.KnotClient)
+ *
+ * IMPORTANTE: Quilt usa KnotClient (org.quiltmc.loader.impl.launch.knot.KnotClient)
  * ya que está basado en Fabric Loader. El version.json de Quilt hereda de vanilla.
  */
 export class EjecutarQuilt {
@@ -421,7 +421,10 @@ export class EjecutarQuilt {
 
       // PASO 4: Procesar librerías del version.json de Quilt
       logProgressService.info(`[Quilt] Procesando ${quiltVersionData.libraries.length} librerías de Quilt...`);
-      
+
+      let processedLibraries = 0;
+      let quiltLoaderFound = false;
+
       for (const lib of quiltVersionData.libraries) {
         try {
           if (!this.isLibraryAllowed(lib.rules)) {
@@ -439,9 +442,12 @@ export class EjecutarQuilt {
               continue;
             }
 
+            // Buscar librería en múltiples ubicaciones posibles
             const possiblePaths = [
-              libPath,
-              path.join(opts.instancePath, 'libraries', this.getLibraryPath(lib.name || '')),
+              libPath, // Ruta desde artifact.path
+              path.join(launcherDataPath, 'libraries', this.getLibraryPath(lib.name || '')), // Ruta desde nombre Maven
+              path.join(opts.instancePath, 'libraries', this.getLibraryPath(lib.name || '')), // Ruta en instancia
+              path.join(process.env.APPDATA || process.env.HOME || '', '.minecraft', 'libraries', this.getLibraryPath(lib.name || '')), // Ruta estándar de .minecraft
             ];
 
             let found = false;
@@ -449,43 +455,124 @@ export class EjecutarQuilt {
               if (fs.existsSync(possiblePath)) {
                 if (!libraryJars.includes(possiblePath)) {
                   libraryJars.push(possiblePath);
+                  logProgressService.info(`[Quilt] Librería encontrada y añadida al classpath: ${path.basename(possiblePath)}`);
                 }
                 found = true;
+                processedLibraries++;
+
+                // Verificar si esta librería es el loader principal de Quilt
+                if (lib.name && (lib.name.includes('quilt-loader') || lib.name.includes('quiltmc:quilt-loader'))) {
+                  quiltLoaderFound = true;
+                  logProgressService.info(`[Quilt] ¡Encontrado el loader principal de Quilt en: ${path.basename(possiblePath)}`);
+                }
                 break;
               }
             }
 
-            if (!found && lib.downloads.artifact.url) {
+            if (!found && lib.downloads?.artifact) {
               try {
-                logProgressService.info(`[Quilt] Descargando librería faltante de Quilt: ${lib.name || 'sin nombre'}`);
+                // Determinar URL de descarga
+                let downloadUrl: string | null = null;
+
+                // Prioridad 1: URL desde downloads.artifact.url
+                if (lib.downloads.artifact.url) {
+                  downloadUrl = lib.downloads.artifact.url;
+                }
+                // Prioridad 2: Construir URL desde el nombre Maven para org.quiltmc.*
+                else if (lib.name?.startsWith('org.quiltmc:')) {
+                  downloadUrl = this.buildQuiltMavenUrl(lib.name);
+                }
+                // Prioridad 3: Maven Central para otras librerías
+                else if (lib.name?.includes(':')) {
+                  downloadUrl = this.buildMavenUrl(lib.name);
+                }
+
+                if (!downloadUrl) {
+                  logProgressService.warning(`[Quilt] No se pudo construir URL para descargar librería: ${lib.name || 'sin nombre'}`);
+                  continue;
+                }
+
+                logProgressService.info(`[Quilt] Descargando librería: ${lib.name || 'sin nombre'} desde ${downloadUrl}`);
+
+                const response = await fetch(downloadUrl, {
+                  headers: { 'User-Agent': 'DRK-Launcher/1.0' }
+                });
+
+                if (!response.ok) {
+                  // Si falla con Maven Central y es org.quiltmc.*, intentar con repositorio de Quilt
+                  if (downloadUrl.includes('repo1.maven.org') && lib.name?.startsWith('org.quiltmc:')) {
+                    const quiltUrl = this.buildQuiltMavenUrl(lib.name);
+                    if (quiltUrl !== downloadUrl) {
+                      logProgressService.info(`[Quilt] Reintentando desde repositorio de Quilt...`);
+                      const fallbackResponse = await fetch(quiltUrl, {
+                        headers: { 'User-Agent': 'DRK-Launcher/1.0' }
+                      });
+                      if (fallbackResponse.ok) {
+                        const buffer = Buffer.from(await fallbackResponse.arrayBuffer());
+                        const libDir = path.dirname(libPath);
+                        if (!fs.existsSync(libDir)) {
+                          fs.mkdirSync(libDir, { recursive: true });
+                        }
+                        fs.writeFileSync(libPath, buffer);
+                        logProgressService.info(`[Quilt] ✓ Librería descargada desde repositorio de Quilt: ${path.basename(libPath)} (${(buffer.length / 1024).toFixed(2)} KB)`);
+
+                        if (!libraryJars.includes(libPath)) {
+                          libraryJars.push(libPath);
+                        }
+                        processedLibraries++;
+
+                        // Verificar si esta librería es el loader principal de Quilt
+                        if (lib.name && (lib.name.includes('quilt-loader') || lib.name.includes('quiltmc:quilt-loader'))) {
+                          quiltLoaderFound = true;
+                          logProgressService.info(`[Quilt] ¡Descargado el loader principal de Quilt: ${path.basename(libPath)}`);
+                        }
+                        continue; // Continuar con la siguiente librería
+                      }
+                    }
+                  }
+                  throw new Error(`HTTP ${response.status} - ${lib.name || 'sin nombre'}`);
+                }
+
+                const buffer = Buffer.from(await response.arrayBuffer());
                 const libDir = path.dirname(libPath);
                 if (!fs.existsSync(libDir)) {
                   fs.mkdirSync(libDir, { recursive: true });
                 }
+                fs.writeFileSync(libPath, buffer);
+                logProgressService.info(`[Quilt] Librería de Quilt descargada: ${path.basename(libPath)} (${(buffer.length / 1024).toFixed(2)} KB)`);
 
-                const response = await fetch(lib.downloads.artifact.url, {
-                  headers: { 'User-Agent': 'DRK-Launcher/1.0' }
-                });
+                if (!libraryJars.includes(libPath)) {
+                  libraryJars.push(libPath);
+                }
+                processedLibraries++;
 
-                if (response.ok) {
-                  const buffer = Buffer.from(await response.arrayBuffer());
-                  fs.writeFileSync(libPath, buffer);
-                  logProgressService.info(`[Quilt] Librería de Quilt descargada`);
-                  
-                  if (!libraryJars.includes(libPath)) {
-                    libraryJars.push(libPath);
-                  }
-                } else {
-                  logProgressService.warning(`[Quilt] Error HTTP al descargar librería de Quilt: ${response.status}`);
+                // Verificar si esta librería es el loader principal de Quilt
+                if (lib.name && (lib.name.includes('quilt-loader') || lib.name.includes('quiltmc:quilt-loader'))) {
+                  quiltLoaderFound = true;
+                  logProgressService.info(`[Quilt] ¡Descargado el loader principal de Quilt: ${path.basename(libPath)}`);
                 }
               } catch (downloadError) {
-                logProgressService.warning(`[Quilt] Error al descargar librería de Quilt: ${downloadError}`);
+                logProgressService.warning(`[Quilt] Error al descargar librería: ${downloadError} - ${lib.name || 'sin nombre'}`);
               }
             }
           }
         } catch (libError) {
           logProgressService.warning(`[Quilt] Error al procesar librería de Quilt ${lib.name || 'sin nombre'}: ${libError}`);
           // Continuar con las siguientes librerías
+        }
+      }
+      logProgressService.info(`[Quilt] Procesadas ${processedLibraries} librerías de Quilt para el classpath`);
+
+      // Verificar si el loader principal de Quilt fue encontrado/procesado
+      if (!quiltLoaderFound) {
+        logProgressService.warning(`[Quilt] ADVERTENCIA: El loader principal de Quilt no fue encontrado en las librerías procesadas`);
+        // Buscarlo explícitamente por nombre común
+        const quiltLoaderInClasspath = libraryJars.some(jar =>
+          path.basename(jar).includes('quilt-loader') && path.basename(jar).endsWith('.jar')
+        );
+        if (quiltLoaderInClasspath) {
+          quiltLoaderFound = true;
+          logProgressService.info(`[Quilt] Loader principal de Quilt encontrado en el classpath`);
         }
       }
 
@@ -497,6 +584,246 @@ export class EjecutarQuilt {
       } else {
         logProgressService.error(`[Quilt] ERROR: client.jar no encontrado en ${clientJar}`);
         throw new Error(`client.jar no encontrado`);
+      }
+
+      // PASO 5.5: Añadir JAR del loader de Quilt al classpath
+      // Buscar el JAR del loader en múltiples ubicaciones posibles
+
+      // Buscar específicamente el JAR del loader de Quilt en el classpath actual
+      // Usar la variable quiltLoaderFound ya declarada en la línea 426
+
+      // Primero, buscar en las librerías ya procesadas
+      if (!quiltLoaderFound) { // Solo buscar si no se encontró antes
+        for (const jar of libraryJars) {
+          if (jar.includes('quilt-loader') && jar.endsWith('.jar')) {
+            logProgressService.info(`[Quilt] JAR del loader ya está en el classpath: ${path.basename(jar)}`);
+            quiltLoaderFound = true;
+            break;
+          }
+        }
+      }
+
+      if (!quiltLoaderFound) {
+        // Si no está en las librerías procesadas, buscar en la carpeta loader de la instancia
+        const loaderDir = path.join(opts.instancePath, 'loader');
+        if (fs.existsSync(loaderDir)) {
+          const loaderFiles = fs.readdirSync(loaderDir);
+          const quiltLoaderJar = loaderFiles.find(file =>
+            file.startsWith('quilt-loader-') && file.endsWith('.jar')
+          );
+
+          if (quiltLoaderJar) {
+            const quiltLoaderPath = path.join(loaderDir, quiltLoaderJar);
+            if (fs.existsSync(quiltLoaderPath)) {
+              libraryJars.push(quiltLoaderPath);
+              logProgressService.info(`[Quilt] JAR del loader añadido al classpath: ${quiltLoaderJar}`);
+              quiltLoaderFound = true;
+            }
+          }
+        }
+      }
+
+      if (!quiltLoaderFound) {
+        // Buscar en el directorio de librerías del launcher
+        const launcherDataPath = getLauncherDataPath();
+        const librariesPath = path.join(launcherDataPath, 'libraries');
+
+        // Buscar recursivamente el JAR del loader de Quilt
+        const findQuiltLoader = (dir: string): string | null => {
+          if (!fs.existsSync(dir)) return null;
+
+          const items = fs.readdirSync(dir);
+          for (const item of items) {
+            const itemPath = path.join(dir, item);
+            const stat = fs.statSync(itemPath);
+
+            if (stat.isDirectory()) {
+              const result = findQuiltLoader(itemPath);
+              if (result) return result;
+            } else if (item.startsWith('quilt-loader-') && item.endsWith('.jar')) {
+              return itemPath;
+            }
+          }
+          return null;
+        };
+
+        const quiltLoaderPath = findQuiltLoader(librariesPath);
+        if (quiltLoaderPath && fs.existsSync(quiltLoaderPath) && !libraryJars.includes(quiltLoaderPath)) {
+          libraryJars.push(quiltLoaderPath);
+          logProgressService.info(`[Quilt] JAR del loader encontrado y añadido al classpath: ${path.basename(quiltLoaderPath)}`);
+          quiltLoaderFound = true;
+        }
+      }
+
+      if (!quiltLoaderFound) {
+        logProgressService.warning(`[Quilt] ADVERTENCIA: No se encontró el JAR del loader de Quilt en ninguna ubicación conocida`);
+      }
+
+      // PASO 5.6: Asegurar que todas las librerías del perfil de Quilt estén en el classpath
+      // A veces las librerías se procesaron pero no se añadieron al classpath por problemas de búsqueda
+      logProgressService.info(`[Quilt] Validando que todas las librerías del perfil estén en el classpath...`);
+
+      // Buscar librerías del perfil que no estén en el classpath actual
+      if (quiltVersionData.libraries && Array.isArray(quiltVersionData.libraries)) {
+        for (const lib of quiltVersionData.libraries) {
+          if (!lib.name) continue;
+
+          // Verificar reglas de compatibilidad
+          if (lib.rules && !this.isLibraryAllowed(lib.rules)) {
+            continue;
+          }
+
+          // Construir la ruta esperada de la librería
+          let expectedLibPath: string | null = null;
+
+          if (lib.downloads?.artifact?.path) {
+            expectedLibPath = path.join(launcherDataPath, 'libraries', lib.downloads.artifact.path);
+          } else if (lib.name) {
+            expectedLibPath = path.join(launcherDataPath, 'libraries', this.getLibraryPath(lib.name));
+          }
+
+          if (expectedLibPath) {
+            // Buscar en múltiples ubicaciones como hicimos antes
+            const possiblePaths = [
+              expectedLibPath,
+              path.join(launcherDataPath, 'libraries', this.getLibraryPath(lib.name)),
+              path.join(opts.instancePath, 'libraries', this.getLibraryPath(lib.name)),
+              path.join(process.env.APPDATA || process.env.HOME || '', '.minecraft', 'libraries', this.getLibraryPath(lib.name)),
+            ];
+
+            let libFound = false;
+            for (const possiblePath of possiblePaths) {
+              if (fs.existsSync(possiblePath)) {
+                if (!libraryJars.includes(possiblePath)) {
+                  libraryJars.push(possiblePath);
+                  logProgressService.info(`[Quilt] Librería adicional añadida al classpath: ${path.basename(possiblePath)}`);
+                }
+                libFound = true;
+                break;
+              }
+            }
+
+            // Si no se encontró y hay URL de descarga, intentar descargar
+            if (!libFound && lib.downloads?.artifact) {
+              try {
+                // Determinar URL de descarga como hicimos antes
+                let downloadUrl: string | null = null;
+
+                if (lib.downloads.artifact.url) {
+                  downloadUrl = lib.downloads.artifact.url;
+                } else if (lib.name.startsWith('org.quiltmc:')) {
+                  downloadUrl = this.buildQuiltMavenUrl(lib.name);
+                } else if (lib.name.includes(':')) {
+                  downloadUrl = this.buildMavenUrl(lib.name);
+                }
+
+                if (downloadUrl && expectedLibPath) {
+                  logProgressService.info(`[Quilt] Descargando librería faltante para classpath: ${lib.name} desde ${downloadUrl}`);
+
+                  const response = await fetch(downloadUrl, {
+                    headers: { 'User-Agent': 'DRK-Launcher/1.0' }
+                  });
+
+                  if (response.ok) {
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    const libDir = path.dirname(expectedLibPath);
+                    if (!fs.existsSync(libDir)) {
+                      fs.mkdirSync(libDir, { recursive: true });
+                    }
+                    fs.writeFileSync(expectedLibPath, buffer);
+
+                    if (!libraryJars.includes(expectedLibPath)) {
+                      libraryJars.push(expectedLibPath);
+                      logProgressService.info(`[Quilt] Librería descargada y añadida al classpath: ${path.basename(expectedLibPath)} (${(buffer.length / 1024).toFixed(2)} KB)`);
+                    }
+                  } else {
+                    logProgressService.warning(`[Quilt] No se pudo descargar librería: ${lib.name} - HTTP ${response.status}`);
+                  }
+                }
+              } catch (error) {
+                logProgressService.warning(`[Quilt] Error al descargar librería: ${lib.name} - ${error}`);
+              }
+            }
+          }
+        }
+      }
+
+      // PASO 5.7: Buscar librerías adicionales que puedan ser necesarias (como joptsimple)
+      // A veces las librerías necesarias no están en el perfil principal pero son requeridas por Quilt
+      logProgressService.info(`[Quilt] Buscando librerías adicionales necesarias...`);
+
+      // Lista de librerías comunes que pueden ser necesarias
+      const commonRequiredLibs = [
+        'org.ow2.asm:asm:*',         // ASM principal
+        'org.ow2.asm:asm-tree:*',    // ASM tree
+        'org.ow2.asm:asm-util:*',    // ASM util
+        'org.ow2.asm:asm-commons:*', // ASM commons
+        'org.ow2.asm:asm-analysis:*' // ASM analysis
+      ];
+
+      for (const libPattern of commonRequiredLibs) {
+        const [group, artifact, version] = libPattern.split(':');
+
+        // Intentar encontrar la librería en el directorio de librerías
+        const libSearchPath = path.join(launcherDataPath, 'libraries', group.replace(/\./g, '/'), artifact);
+
+        if (fs.existsSync(libSearchPath)) {
+          const files = fs.readdirSync(libSearchPath);
+          for (const file of files) {
+            if (file.endsWith('.jar') && file.startsWith(`${artifact}-`)) {
+              const fullPath = path.join(libSearchPath, file);
+              if (fs.existsSync(fullPath) && !libraryJars.includes(fullPath)) {
+                libraryJars.push(fullPath);
+                logProgressService.info(`[Quilt] Librería adicional encontrada y añadida al classpath: ${file}`);
+              }
+            }
+          }
+        }
+      }
+
+      // PASO 5.8: Buscar y descargar específicamente joptsimple si es necesario
+      logProgressService.info(`[Quilt] Buscando librería joptsimple...`);
+
+      const joptGroup = 'net.sf.jopt-simple';
+      const joptArtifact = 'jopt-simple';
+      const joptVersion = '5.0.4'; // Versión comúnmente usada
+      const joptLibPath = path.join(launcherDataPath, 'libraries', joptGroup.replace(/\./g, '/'), joptArtifact, joptVersion, `${joptArtifact}-${joptVersion}.jar`);
+
+      if (!fs.existsSync(joptLibPath)) {
+        logProgressService.info(`[Quilt] joptsimple no encontrada, intentando descargar...`);
+
+        // Intentar descargar desde Maven Central
+        const joptMavenUrl = `https://repo1.maven.org/maven2/${joptGroup.replace(/\./g, '/')}/${joptArtifact}/${joptVersion}/${joptArtifact}-${joptVersion}.jar`;
+
+        try {
+          const response = await fetch(joptMavenUrl, {
+            headers: { 'User-Agent': 'DRK-Launcher/1.0' }
+          });
+
+          if (response.ok) {
+            const buffer = Buffer.from(await response.arrayBuffer());
+            const libDir = path.dirname(joptLibPath);
+            if (!fs.existsSync(libDir)) {
+              fs.mkdirSync(libDir, { recursive: true });
+            }
+            fs.writeFileSync(joptLibPath, buffer);
+            logProgressService.info(`[Quilt] joptsimple descargada y añadida al classpath: ${joptVersion} (${(buffer.length / 1024).toFixed(2)} KB)`);
+
+            if (!libraryJars.includes(joptLibPath)) {
+              libraryJars.push(joptLibPath);
+            }
+          } else {
+            logProgressService.warning(`[Quilt] No se pudo descargar joptsimple: HTTP ${response.status}`);
+          }
+        } catch (error) {
+          logProgressService.warning(`[Quilt] Error al descargar joptsimple: ${error}`);
+        }
+      } else {
+        // Si ya existe, añadirla al classpath
+        if (!libraryJars.includes(joptLibPath)) {
+          libraryJars.push(joptLibPath);
+          logProgressService.info(`[Quilt] joptsimple encontrada y añadida al classpath: ${path.basename(joptLibPath)}`);
+        }
       }
 
       // PASO 6: Construir classpath
@@ -554,12 +881,12 @@ export class EjecutarQuilt {
       }
 
       // PASO 8: Obtener mainClass (Quilt usa KnotClient)
-      const mainClass = quiltVersionData.mainClass || 'net.fabricmc.loader.impl.launch.knot.KnotClient';
+      const mainClass = quiltVersionData.mainClass || 'org.quiltmc.loader.impl.launch.knot.KnotClient';
       logProgressService.info(`[Quilt] MainClass: ${mainClass}`);
 
       // PASO 9: Construir argumentos del juego
       const userUUID = opts.userProfile?.id ? ensureValidUUID(opts.userProfile.id) : ensureValidUUID('00000000-0000-0000-0000-000000000000');
-      
+
       let accessToken = '0';
       let userType = 'legacy';
 
@@ -583,6 +910,15 @@ export class EjecutarQuilt {
       } else if (quiltVersionData.assetIndex && quiltVersionData.assetIndex.id) {
         assetIndexId = quiltVersionData.assetIndex.id;
       }
+
+      // Añadir argumentos específicos para resolver el problema de mappings de Quilt
+      // Si se detecta el problema de mappings intermediary, usar namespace official
+      const quiltSpecificArgs = [
+        // Configurar namespace de mappings para evitar el error de "intermediary"
+        '-Dloader.experimental.minecraft.targetNamespace=official',
+        // Opcional: Configurar para usar mappings oficiales si no hay intermediarios
+        '-Dloader.use.intermediary=false'
+      ];
 
       const gameArgs = [
         '--username', opts.userProfile?.username || 'Player',
@@ -610,6 +946,7 @@ export class EjecutarQuilt {
       // PASO 10: Construir argumentos finales
       const launchArgs = [
         ...jvmArgs,
+        ...quiltSpecificArgs,  // Añadir argumentos específicos de Quilt antes de los args del juego
         ...(opts.jvmArgs || []),
         '-cp', classpath,
         mainClass,
@@ -741,6 +1078,37 @@ export class EjecutarQuilt {
         logProgressService.error(`[Quilt] Error al detener proceso: ${error}`);
       }
     }
+  }
+
+  /**
+   * Construye la URL de Maven Central para una librería
+   */
+  private buildMavenUrl(libraryName: string): string {
+    const parts = libraryName.split(':');
+    if (parts.length < 3) {
+      return '';
+    }
+
+    const [group, artifact, version] = parts;
+    const groupPath = group.replace(/\./g, '/');
+
+    return `https://repo1.maven.org/maven2/${groupPath}/${artifact}/${version}/${artifact}-${version}.jar`;
+  }
+
+  /**
+   * Construye la URL del repositorio de Quilt para una librería
+   * IMPORTANTE: Las librerías de Quilt (org.quiltmc.*) están en maven.quiltmc.org
+   */
+  private buildQuiltMavenUrl(libraryName: string): string {
+    const parts = libraryName.split(':');
+    if (parts.length < 3) {
+      return '';
+    }
+
+    const [group, artifact, version] = parts;
+    const groupPath = group.replace(/\./g, '/');
+
+    return `https://maven.quiltmc.org/repository/release/${groupPath}/${artifact}/${version}/${artifact}-${version}.jar`;
   }
 }
 

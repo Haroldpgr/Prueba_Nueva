@@ -1734,12 +1734,12 @@ async function fetchModrinthContent(contentType: keyof typeof modrinthProjectTyp
   }
 
   try {
-    // Fetch multiple pages concurrently to get more results (up to 1000 total) since Modrinth API has a max of 100 per request
+    // Fetch multiple pages concurrently to get more results (up to 2000 total) since Modrinth API has a max of 100 per request
     const PAGE_SIZE = 100; // Modrinth API maximum per request
-    const maxResults = 1000; // Maximum results to fetch (10 requests × 100)
+    const maxResults = 2000; // Maximum results to fetch (20 requests × 100)
 
     // Calculate how many requests we'll need
-    const numRequests = Math.min(10, Math.ceil(maxResults / PAGE_SIZE)); // Maximum of 10 requests for 1000 results
+    const numRequests = Math.min(20, Math.ceil(maxResults / PAGE_SIZE)); // Maximum of 20 requests for 2000 results
 
     // Create all request promises
     const requests = [];

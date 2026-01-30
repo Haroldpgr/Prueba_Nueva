@@ -59,12 +59,12 @@ export class CurseForgeService {
         return [];
       }
 
-      // Fetch multiple pages concurrently to get more results (up to 1000 total) with reliable page size
+      // Fetch multiple pages concurrently to get more results (up to 2000 total) with reliable page size
       const PAGE_SIZE = 50; // Use page size that works reliably with CurseForge API
-      const maxResults = 1000; // Maximum results to fetch
+      const maxResults = 2000; // Maximum results to fetch
 
       // Calculate how many requests we'll need
-      const numRequests = Math.min(20, Math.ceil(maxResults / PAGE_SIZE)); // Maximum of 20 requests for 1000 results
+      const numRequests = Math.min(40, Math.ceil(maxResults / PAGE_SIZE)); // Maximum of 40 requests for 2000 results
 
       // Create all request promises
       const requests = [];

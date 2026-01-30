@@ -180,42 +180,84 @@ export class DownloadQuilt {
    * Descarga una librería individual
    */
   private async downloadLibrary(lib: any): Promise<void> {
-    if (!lib.downloads || !lib.downloads.artifact) {
+    if (!lib.name) {
+      logProgressService.warning(`[Quilt] Librería sin nombre, omitiendo`);
       return;
     }
 
-    const artifact = lib.downloads.artifact;
-    const libPath = path.join(this.librariesPath, artifact.path || this.getLibraryPath(lib.name));
-    
-    if (fs.existsSync(libPath)) {
-      return; // Ya existe
-    }
-
-    // Verificar reglas de compatibilidad
+    // Verificar reglas de compatibilidad PRIMERO
     if (lib.rules && !this.isLibraryAllowed(lib.rules)) {
+      logProgressService.info(`[Quilt] Librería excluida por reglas: ${lib.name}`);
       return;
+    }
+
+    // Construir path desde el nombre Maven
+    const libPath = lib.downloads?.artifact?.path
+      ? path.join(this.librariesPath, lib.downloads.artifact.path)
+      : path.join(this.librariesPath, this.getLibraryPath(lib.name));
+
+    if (fs.existsSync(libPath)) {
+      logProgressService.info(`[Quilt] Librería ya existe: ${path.basename(libPath)}`);
+      return; // Ya existe
     }
 
     try {
       this.ensureDir(path.dirname(libPath));
-      
-      logProgressService.info(`[Quilt] Descargando librería: ${lib.name}`);
-      
-      const response = await fetch(artifact.url, {
+
+      // Determinar URL de descarga
+      let downloadUrl: string | null = null;
+
+      // Prioridad 1: URL desde downloads.artifact.url
+      if (lib.downloads?.artifact?.url) {
+        downloadUrl = lib.downloads.artifact.url;
+      }
+      // Prioridad 2: Construir URL desde el nombre Maven para org.quiltmc.*
+      else if (lib.name.startsWith('org.quiltmc:')) {
+        downloadUrl = this.buildQuiltMavenUrl(lib.name);
+      }
+      // Prioridad 3: Maven Central para otras librerías
+      else if (lib.name.includes(':')) {
+        downloadUrl = this.buildMavenUrl(lib.name);
+      }
+
+      if (!downloadUrl) {
+        logProgressService.warning(`[Quilt] No se pudo construir URL para librería: ${lib.name}`);
+        return;
+      }
+
+      logProgressService.info(`[Quilt] Descargando librería: ${lib.name} -> ${path.basename(libPath)}`);
+
+      const response = await fetch(downloadUrl, {
         headers: { 'User-Agent': 'DRK-Launcher/1.0' }
       });
 
       if (!response.ok) {
-        throw new Error(`Error al descargar ${lib.name}: HTTP ${response.status}`);
+        // Si falla con Maven Central y es org.quiltmc.*, intentar con repositorio de Quilt
+        if (downloadUrl.includes('repo1.maven.org') && lib.name.startsWith('org.quiltmc:')) {
+          const quiltUrl = this.buildQuiltMavenUrl(lib.name);
+          if (quiltUrl !== downloadUrl) {
+            logProgressService.info(`[Quilt] Reintentando desde repositorio de Quilt...`);
+            const fallbackResponse = await fetch(quiltUrl, {
+              headers: { 'User-Agent': 'DRK-Launcher/1.0' }
+            });
+            if (fallbackResponse.ok) {
+              const buffer = Buffer.from(await fallbackResponse.arrayBuffer());
+              fs.writeFileSync(libPath, buffer);
+              logProgressService.info(`[Quilt] ✓ Librería descargada desde repositorio de Quilt: ${path.basename(libPath)} (${(buffer.length / 1024).toFixed(2)} KB)`);
+              return;
+            }
+          }
+        }
+        throw new Error(`Error al descargar ${lib.name}: HTTP ${response.status} (URL: ${downloadUrl})`);
       }
 
       const buffer = Buffer.from(await response.arrayBuffer());
       fs.writeFileSync(libPath, buffer);
-      
-      logProgressService.info(`[Quilt] Librería descargada: ${path.basename(libPath)}`);
+
+      logProgressService.info(`[Quilt] ✓ Librería descargada: ${path.basename(libPath)} (${(buffer.length / 1024).toFixed(2)} KB)`);
     } catch (error) {
       logProgressService.warning(`[Quilt] Error al descargar librería ${lib.name}:`, error);
-      throw error;
+      // No lanzar error, continuar con otras librerías
     }
   }
 
@@ -295,8 +337,39 @@ export class DownloadQuilt {
     const [group, artifact, version] = parts;
     const groupPath = group.replace(/\./g, '/');
     const fileName = `${artifact}-${version}.jar`;
-    
+
     return path.join(groupPath, artifact, version, fileName);
+  }
+
+  /**
+   * Construye la URL de Maven Central para una librería
+   */
+  private buildMavenUrl(libraryName: string): string {
+    const parts = libraryName.split(':');
+    if (parts.length < 3) {
+      return '';
+    }
+
+    const [group, artifact, version] = parts;
+    const groupPath = group.replace(/\./g, '/');
+
+    return `https://repo1.maven.org/maven2/${groupPath}/${artifact}/${version}/${artifact}-${version}.jar`;
+  }
+
+  /**
+   * Construye la URL del repositorio de Quilt para una librería
+   * IMPORTANTE: Las librerías de Quilt (org.quiltmc.*) están en maven.quiltmc.org
+   */
+  private buildQuiltMavenUrl(libraryName: string): string {
+    const parts = libraryName.split(':');
+    if (parts.length < 3) {
+      return '';
+    }
+
+    const [group, artifact, version] = parts;
+    const groupPath = group.replace(/\./g, '/');
+
+    return `https://maven.quiltmc.org/repository/release/${groupPath}/${artifact}/${version}/${artifact}-${version}.jar`;
   }
 }
 
